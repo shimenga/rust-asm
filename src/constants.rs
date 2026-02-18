@@ -28,6 +28,10 @@ pub const V18: u16 = 62;
 pub const V19: u16 = 63;
 pub const V20: u16 = 64;
 pub const V21: u16 = 65;
+pub const V22: u16 = 66;
+pub const V23: u16 = 67;
+pub const V24: u16 = 68;
+pub const V25: u16 = 69;
 
 pub const ACC_PUBLIC: u16 = 0x0001;
 pub const ACC_PRIVATE: u16 = 0x0002;

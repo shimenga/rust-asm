@@ -6,12 +6,13 @@ use crate::insn::{
     LookupSwitchInsnNode, MemberRef, MethodInsnNode, MultiANewArrayInsnNode, TableSwitchInsnNode,
     TryCatchBlockNode, TypeInsnNode, VarInsnNode,
 };
-use crate::opcodes;
+use crate::{constants, opcodes};
 
 #[derive(Debug)]
 pub enum ClassReadError {
     UnexpectedEof,
     InvalidMagic(u32),
+    InvalidClassVersion(u16),
     InvalidConstantPoolTag(u8),
     InvalidIndex(u16),
     InvalidAttribute(String),
@@ -24,6 +25,7 @@ impl fmt::Display for ClassReadError {
         match self {
             ClassReadError::UnexpectedEof => write!(f, "unexpected end of input"),
             ClassReadError::InvalidMagic(magic) => write!(f, "invalid magic 0x{magic:08x}"),
+            ClassReadError::InvalidClassVersion(version) => write!(f, "invalid class major version {version}"),
             ClassReadError::InvalidConstantPoolTag(tag) => {
                 write!(f, "invalid constant pool tag {tag}")
             }
@@ -509,6 +511,9 @@ pub fn read_class_file(bytes: &[u8]) -> Result<ClassFile, ClassReadError> {
     }
     let minor_version = reader.read_u2()?;
     let major_version = reader.read_u2()?;
+    if major_version > constants::V25 {
+        return Err(ClassReadError::InvalidClassVersion(major_version));
+    }
     let constant_pool = read_constant_pool(&mut reader)?;
     let access_flags = reader.read_u2()?;
     let this_class = reader.read_u2()?;
