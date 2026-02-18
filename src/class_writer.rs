@@ -2163,19 +2163,19 @@ fn execute_instruction(
     };
 
     match insn.opcode {
-        0x00 => {}
-        0x01 => stack.push(FrameType::Null),
-        0x02..=0x08 => stack.push(FrameType::Integer),
-        0x09 | 0x0A => stack.push(FrameType::Long),
-        0x0B..=0x0D => stack.push(FrameType::Float),
-        0x0E | 0x0F => stack.push(FrameType::Double),
-        0x10 => stack.push(FrameType::Integer),
-        0x11 => stack.push(FrameType::Integer),
-        0x12..=0x14 => {
+        opcodes::NOP => {}
+        opcodes::ACONST_NULL => stack.push(FrameType::Null),
+        opcodes::ICONST_M1..=opcodes::ICONST_5 => stack.push(FrameType::Integer),
+        opcodes::LCONST_0 | opcodes::LCONST_1 => stack.push(FrameType::Long),
+        opcodes::FCONST_0..=opcodes::FCONST_2 => stack.push(FrameType::Float),
+        opcodes::DCONST_0 | opcodes::DCONST_1 => stack.push(FrameType::Double),
+        opcodes::BIPUSH => stack.push(FrameType::Integer),
+        opcodes::SIPUSH => stack.push(FrameType::Integer),
+        opcodes::LDC..=opcodes::LDC2_W => {
             let ty = ldc_type(insn, cp)?;
             stack.push(ty);
         }
-        0x15..=0x19 => {
+        opcodes::ILOAD..=opcodes::ALOAD => {
             let index = var_index(insn)?;
             if let Some(value) = locals.get(index as usize) {
                 stack.push(value.clone());
@@ -2183,80 +2183,80 @@ fn execute_instruction(
                 stack.push(FrameType::Top);
             }
         }
-        0x1A..=0x1D => stack.push(load_local(
+        opcodes::ILOAD_0..=opcodes::ILOAD_3 => stack.push(load_local(
             &locals,
-            (insn.opcode - 0x1A) as u16,
+            (insn.opcode - opcodes::ILOAD_0) as u16,
             FrameType::Integer,
         )),
-        0x1E..=0x21 => stack.push(load_local(
+        opcodes::LLOAD_0..=opcodes::LLOAD_3 => stack.push(load_local(
             &locals,
-            (insn.opcode - 0x1E) as u16,
+            (insn.opcode - opcodes::LLOAD_0) as u16,
             FrameType::Long,
         )),
-        0x22..=0x25 => stack.push(load_local(
+        opcodes::FLOAD_0..=opcodes::FLOAD_3 => stack.push(load_local(
             &locals,
-            (insn.opcode - 0x22) as u16,
+            (insn.opcode - opcodes::FLOAD_0) as u16,
             FrameType::Float,
         )),
-        0x26..=0x29 => stack.push(load_local(
+        opcodes::DLOAD_0..=opcodes::DLOAD_3 => stack.push(load_local(
             &locals,
-            (insn.opcode - 0x26) as u16,
+            (insn.opcode - opcodes::DLOAD_0) as u16,
             FrameType::Double,
         )),
-        0x2A..=0x2D => stack.push(load_local(
+        opcodes::ALOAD_0..=opcodes::ALOAD_3 => stack.push(load_local(
             &locals,
-            (insn.opcode - 0x2A) as u16,
+            (insn.opcode - opcodes::ALOAD_0) as u16,
             FrameType::Object(class_node.name.clone()),
         )),
-        0x2E..=0x35 => {
+        opcodes::IALOAD..=opcodes::SALOAD => {
             pop(&mut stack)?;
             let array_ref = pop(&mut stack)?; //fixed: array -> java/lang/Object.
             let ty = match insn.opcode {
-                0x2E => FrameType::Integer,
-                0x2F => FrameType::Long,
-                0x30 => FrameType::Float,
-                0x31 => FrameType::Double,
-                0x32 => array_element_type(&array_ref)
+                opcodes::IALOAD => FrameType::Integer,
+                opcodes::LALOAD => FrameType::Long,
+                opcodes::FALOAD => FrameType::Float,
+                opcodes::DALOAD => FrameType::Double,
+                opcodes::AALOAD => array_element_type(&array_ref)
                     .unwrap_or_else(|| FrameType::Object("java/lang/Object".to_string())),
-                0x33..=0x35 => FrameType::Integer,
+                opcodes::BALOAD..=opcodes::SALOAD => FrameType::Integer,
                 _ => FrameType::Top,
             };
             stack.push(ty);
         }
-        0x36..=0x3A => {
+        opcodes::ISTORE..=opcodes::ASTORE => {
             let index = var_index(insn)?;
             let value = pop(&mut stack)?;
             store_local(&mut locals, index, value);
         }
-        0x3B..=0x3E => {
+        opcodes::ISTORE_0..=opcodes::ISTORE_3 => {
             let value = pop(&mut stack)?;
-            store_local(&mut locals, (insn.opcode - 0x3B) as u16, value);
+            store_local(&mut locals, (insn.opcode - opcodes::ISTORE_0) as u16, value);
         }
-        0x3F..=0x42 => {
+        opcodes::LSTORE_0..=opcodes::LSTORE_3 => {
             let value = pop(&mut stack)?;
-            store_local(&mut locals, (insn.opcode - 0x3F) as u16, value);
+            store_local(&mut locals, (insn.opcode - opcodes::LSTORE_0) as u16, value);
         }
-        0x43..=0x46 => {
+        opcodes::FSTORE_0..=opcodes::FSTORE_3 => {
             let value = pop(&mut stack)?;
-            store_local(&mut locals, (insn.opcode - 0x43) as u16, value);
+            store_local(&mut locals, (insn.opcode - opcodes::FSTORE_0) as u16, value);
         }
-        0x47..=0x4A => {
+        opcodes::DSTORE_0..=opcodes::DSTORE_3 => {
             let value = pop(&mut stack)?;
-            store_local(&mut locals, (insn.opcode - 0x47) as u16, value);
+            store_local(&mut locals, (insn.opcode - opcodes::DSTORE_0) as u16, value);
         }
-        0x4B..=0x4E => {
+        opcodes::ASTORE_0..=opcodes::ASTORE_3 => {
             let value = pop(&mut stack)?;
-            store_local(&mut locals, (insn.opcode - 0x4B) as u16, value);
+            store_local(&mut locals, (insn.opcode - opcodes::ASTORE_0) as u16, value);
         }
-        0x4F..=0x56 => {
+        opcodes::IASTORE..=opcodes::SASTORE => {
             pop(&mut stack)?;
             pop(&mut stack)?;
             pop(&mut stack)?;
         }
-        0x57 => {
+        opcodes::POP => {
             pop(&mut stack)?;
         }
-        0x58 => {
+        opcodes::POP2 => {
             let v1 = pop(&mut stack)?;
             if is_category2(&v1) {
                 return Err(ClassWriteError::FrameComputation(
@@ -2270,7 +2270,7 @@ fn execute_instruction(
                 ));
             }
         }
-        0x59 => {
+        opcodes::DUP => {
             let v1 = pop(&mut stack)?;
             if is_category2(&v1) {
                 return Err(ClassWriteError::FrameComputation(
@@ -2280,7 +2280,7 @@ fn execute_instruction(
             stack.push(v1.clone());
             stack.push(v1);
         }
-        0x5A => {
+        opcodes::DUP_X1 => {
             let v1 = pop(&mut stack)?;
             let v2 = pop(&mut stack)?;
             if is_category2(&v1) || is_category2(&v2) {
@@ -2290,7 +2290,7 @@ fn execute_instruction(
             stack.push(v2);
             stack.push(v1);
         }
-        0x5B => {
+        opcodes::DUP_X2 => {
             let v1 = pop(&mut stack)?;
             let v2 = pop(&mut stack)?;
             let v3 = pop(&mut stack)?;
@@ -2302,7 +2302,7 @@ fn execute_instruction(
             stack.push(v2);
             stack.push(v1);
         }
-        0x5C => {
+        opcodes::DUP2 => {
             let v1 = pop(&mut stack)?;
             if is_category2(&v1) {
                 stack.push(v1.clone());
@@ -2318,7 +2318,7 @@ fn execute_instruction(
                 stack.push(v1);
             }
         }
-        0x5D => {
+        opcodes::DUP2_X1 => {
             let v1 = pop(&mut stack)?;
             if is_category2(&v1) {
                 let v2 = pop(&mut stack)?;
@@ -2335,7 +2335,7 @@ fn execute_instruction(
                 stack.push(v1);
             }
         }
-        0x5E => {
+        opcodes::DUP2_X2 => {
             let v1 = pop(&mut stack)?;
             if is_category2(&v1) {
                 let v2 = pop(&mut stack)?;
@@ -2356,7 +2356,7 @@ fn execute_instruction(
                 stack.push(v1);
             }
         }
-        0x5F => {
+        opcodes::SWAP => {
             let v1 = pop(&mut stack)?;
             let v2 = pop(&mut stack)?;
             if is_category2(&v1) || is_category2(&v2) {
