@@ -2365,155 +2365,175 @@ fn execute_instruction(
             stack.push(v1);
             stack.push(v2);
         }
-        0x60 | 0x64 | 0x68 | 0x6C | 0x70 | 0x78 | 0x7A | 0x7C | 0x7E | 0x80 | 0x82 => {
+        opcodes::IADD
+        | opcodes::ISUB
+        | opcodes::IMUL
+        | opcodes::IDIV
+        | opcodes::IREM
+        | opcodes::ISHL
+        | opcodes::ISHR
+        | opcodes::IUSHR
+        | opcodes::IAND
+        | opcodes::IOR
+        | opcodes::IXOR => {
             pop(&mut stack)?;
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0x61 | 0x65 | 0x69 | 0x6D | 0x71 | 0x79 | 0x7B | 0x7D | 0x7F | 0x81 | 0x83 => {
+        opcodes::LADD
+        | opcodes::LSUB
+        | opcodes::LMUL
+        | opcodes::LDIV
+        | opcodes::LREM
+        | opcodes::LSHL
+        | opcodes::LSHR
+        | opcodes::LUSHR
+        | opcodes::LAND
+        | opcodes::LOR
+        | opcodes::LXOR => {
             pop(&mut stack)?;
             pop(&mut stack)?;
             stack.push(FrameType::Long);
         }
-        0x62 | 0x66 | 0x6A | 0x6E | 0x72 => {
+        opcodes::FADD | opcodes::FSUB | opcodes::FMUL | opcodes::FDIV | opcodes::FREM => {
             pop(&mut stack)?;
             pop(&mut stack)?;
             stack.push(FrameType::Float);
         }
-        0x63 | 0x67 | 0x6B | 0x6F | 0x73 => {
+        opcodes::DADD | opcodes::DSUB | opcodes::DMUL | opcodes::DDIV | opcodes::DREM => {
             pop(&mut stack)?;
             pop(&mut stack)?;
             stack.push(FrameType::Double);
         }
-        0x74 => {
+        opcodes::INEG => {
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0x75 => {
+        opcodes::LNEG => {
             pop(&mut stack)?;
             stack.push(FrameType::Long);
         }
-        0x76 => {
+        opcodes::FNEG => {
             pop(&mut stack)?;
             stack.push(FrameType::Float);
         }
-        0x77 => {
+        opcodes::DNEG => {
             pop(&mut stack)?;
             stack.push(FrameType::Double);
         }
-        0x84 => {}
-        0x85 => {
+        opcodes::IINC => {}
+        opcodes::I2L => {
             pop(&mut stack)?;
             stack.push(FrameType::Long);
         }
-        0x86 => {
+        opcodes::I2F => {
             pop(&mut stack)?;
             stack.push(FrameType::Float);
         }
-        0x87 => {
+        opcodes::I2D => {
             pop(&mut stack)?;
             stack.push(FrameType::Double);
         }
-        0x88 => {
+        opcodes::L2I => {
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0x89 => {
+        opcodes::L2F => {
             pop(&mut stack)?;
             stack.push(FrameType::Float);
         }
-        0x8A => {
+        opcodes::L2D => {
             pop(&mut stack)?;
             stack.push(FrameType::Double);
         }
-        0x8B => {
+        opcodes::F2I => {
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0x8C => {
+        opcodes::F2L => {
             pop(&mut stack)?;
             stack.push(FrameType::Long);
         }
-        0x8D => {
+        opcodes::F2D => {
             pop(&mut stack)?;
             stack.push(FrameType::Double);
         }
-        0x8E => {
+        opcodes::D2I => {
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0x8F => {
+        opcodes::D2L => {
             pop(&mut stack)?;
             stack.push(FrameType::Long);
         }
-        0x90 => {
+        opcodes::D2F => {
             pop(&mut stack)?;
             stack.push(FrameType::Float);
         }
-        0x91..=0x93 => {
+        opcodes::I2B..=opcodes::I2S => {
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0x94..=0x98 => {
+        opcodes::LCMP..=opcodes::DCMPG => {
             pop(&mut stack)?;
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0x99..=0x9E | 0xC6 | 0xC7 => {
+        opcodes::IFEQ..=opcodes::IFLE | opcodes::IFNULL | opcodes::IFNONNULL => {
             pop(&mut stack)?;
         }
-        0x9F..=0xA6 => {
+        opcodes::IF_ICMPEQ..=opcodes::IF_ACMPNE => {
             pop(&mut stack)?;
             pop(&mut stack)?;
         }
-        0xA7 | 0xC8 => {}
-        0xA8 | 0xA9 | 0xC9 => {
+        opcodes::GOTO | opcodes::GOTO_W => {}
+        opcodes::JSR | opcodes::RET | opcodes::JSR_W => {
             return Err(ClassWriteError::FrameComputation(format!(
                 "jsr/ret not supported at {}",
                 insn.offset
             )));
         }
-        0xAA | 0xAB => {
+        opcodes::TABLESWITCH | opcodes::LOOKUPSWITCH => {
             pop(&mut stack)?;
         }
-        0xAC => {
+        opcodes::IRETURN => {
             pop(&mut stack)?;
         }
-        0xAD => {
+        opcodes::LRETURN => {
             pop(&mut stack)?;
         }
-        0xAE => {
+        opcodes::FRETURN => {
             pop(&mut stack)?;
         }
-        0xAF => {
+        opcodes::DRETURN => {
             pop(&mut stack)?;
         }
-        0xB0 => {
+        opcodes::ARETURN => {
             pop(&mut stack)?;
         }
-        0xB1 => {}
-        0xB2 => {
+        opcodes::RETURN => {}
+        opcodes::GETSTATIC => {
             let ty = field_type(insn, cp)?;
             stack.push(ty);
         }
-        0xB3 => {
+        opcodes::PUTSTATIC => {
             pop(&mut stack)?;
         }
-        0xB4 => {
+        opcodes::GETFIELD => {
             pop(&mut stack)?;
             let ty = field_type(insn, cp)?;
             stack.push(ty);
         }
-        0xB5 => {
+        opcodes::PUTFIELD => {
             pop(&mut stack)?;
             pop(&mut stack)?;
         }
-        0xB6..=0xBA => {
+        opcodes::INVOKEVIRTUAL..=opcodes::INVOKEDYNAMIC => {
             let (args, ret, owner, is_init) = method_type(insn, cp)?;
             for _ in 0..args.len() {
                 pop(&mut stack)?;
             }
-            if insn.opcode != 0xB8 && insn.opcode != 0xBA {
+            if insn.opcode != opcodes::INVOKESTATIC && insn.opcode != opcodes::INVOKEDYNAMIC {
                 let receiver = pop(&mut stack)?;
                 if is_init {
                     let init_owner = if receiver == FrameType::UninitializedThis {
@@ -2528,12 +2548,12 @@ fn execute_instruction(
                 stack.push(ret);
             }
         }
-        0xBB => {
+        opcodes::NEW => {
             if let Operand::U2(_index) = insn.operand {
                 stack.push(FrameType::Uninitialized(insn.offset));
             }
         }
-        0xBC => {
+        opcodes::NEWARRAY => {
             pop(&mut stack)?;
             if let Operand::U1(atype) = insn.operand {
                 let desc = newarray_descriptor(atype)?;
@@ -2542,35 +2562,35 @@ fn execute_instruction(
                 stack.push(FrameType::Object("[I".to_string()));
             }
         }
-        0xBD => {
+        opcodes::ANEWARRAY => {
             pop(&mut stack)?;
             if let Operand::U2(index) = insn.operand {
                 let class_name = cp_class_name(cp, index)?;
                 stack.push(FrameType::Object(format!("[L{class_name};")));
             }
         }
-        0xBE => {
+        opcodes::ARRAYLENGTH => {
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0xBF => {
+        opcodes::ATHROW => {
             pop(&mut stack)?;
         }
-        0xC0 => {
+        opcodes::CHECKCAST => {
             pop(&mut stack)?;
             if let Operand::U2(index) = insn.operand {
                 let class_name = cp_class_name(cp, index)?;
                 stack.push(FrameType::Object(class_name.to_string()));
             }
         }
-        0xC1 => {
+        opcodes::INSTANCEOF => {
             pop(&mut stack)?;
             stack.push(FrameType::Integer);
         }
-        0xC2 | 0xC3 => {
+        opcodes::MONITORENTER | opcodes::MONITOREXIT => {
             pop(&mut stack)?;
         }
-        0xC4 => {
+        opcodes::WIDE => {
             if let Operand::Wide {
                 opcode,
                 index,
@@ -2578,24 +2598,24 @@ fn execute_instruction(
             } = insn.operand
             {
                 match opcode {
-                    0x15..=0x19 => {
+                    opcodes::ILOAD..=opcodes::ALOAD => {
                         if let Some(value) = locals.get(index as usize) {
                             stack.push(value.clone());
                         }
                     }
-                    0x36..=0x3A => {
+                    opcodes::ISTORE..=opcodes::ASTORE => {
                         let value = pop(&mut stack)?;
                         store_local(&mut locals, index, value);
                     }
-                    0x84 => {
+                    opcodes::IINC => {
                         let _ = increment;
                     }
-                    0xA9 => {}
+                    opcodes::RET => {}
                     _ => {}
                 }
             }
         }
-        0xC5 => {
+        opcodes::MULTIANEWARRAY => {
             if let Operand::MultiANewArray { dims, .. } = insn.operand {
                 for _ in 0..dims {
                     pop(&mut stack)?;
@@ -2608,7 +2628,7 @@ fn execute_instruction(
                 }
             }
         }
-        0xCA | 0xFE | 0xFF => {}
+        opcodes::BREAKPOINT | opcodes::IMPDEP1 | opcodes::IMPDEP2 => {}
         _ => {}
     }
 
@@ -2850,7 +2870,7 @@ fn cp_method_descriptor(
         Some(CpInfo::InvokeDynamic {
             name_and_type_index,
             ..
-        }) if opcode == 0xBA => match cp.get(*name_and_type_index as usize) {
+        }) if opcode == opcodes::INVOKEDYNAMIC => match cp.get(*name_and_type_index as usize) {
             Some(CpInfo::NameAndType {
                 name_index,
                 descriptor_index,
