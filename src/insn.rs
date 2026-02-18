@@ -95,6 +95,12 @@ pub struct LabelNode {
     pub id: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LineNumberInsnNode {
+    pub line: u16,
+    pub start: LabelNode,
+}
+
 #[derive(Debug, Clone)]
 pub struct TryCatchBlockNode {
     pub start: LabelNode,
@@ -106,6 +112,7 @@ pub struct TryCatchBlockNode {
 #[derive(Debug, Clone)]
 pub enum AbstractInsnNode {
     Label(LabelNode),
+    LineNumber(LineNumberInsnNode),
     Insn(Insn),
 }
 
@@ -194,6 +201,12 @@ impl NodeList {
 impl From<LabelNode> for AbstractInsnNode {
     fn from(value: LabelNode) -> Self {
         AbstractInsnNode::Label(value)
+    }
+}
+
+impl From<LineNumberInsnNode> for AbstractInsnNode {
+    fn from(value: LineNumberInsnNode) -> Self {
+        AbstractInsnNode::LineNumber(value)
     }
 }
 

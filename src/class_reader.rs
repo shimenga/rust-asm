@@ -6,6 +6,7 @@ use crate::insn::{
     LookupSwitchInsnNode, MemberRef, MethodInsnNode, MultiANewArrayInsnNode, TableSwitchInsnNode,
     TryCatchBlockNode, TypeInsnNode, VarInsnNode,
 };
+use crate::opcodes;
 
 #[derive(Debug)]
 pub enum ClassReadError {
@@ -1071,60 +1072,60 @@ fn parse_code_instructions(code: &[u8]) -> Result<Vec<Insn>, ClassReadError> {
         let opcode_offset = reader.pos();
         let opcode = reader.read_u1()?;
         let insn = match opcode {
-            0x00..=0x0F => Insn::Simple(InsnNode { opcode }),
-            0x10 => Insn::Int(IntInsnNode {
+            opcodes::NOP..=opcodes::DCONST_1 => Insn::Simple(InsnNode { opcode }),
+            opcodes::BIPUSH => Insn::Int(IntInsnNode {
                 insn: InsnNode { opcode },
                 operand: reader.read_i1()? as i32,
             }),
-            0x11 => Insn::Int(IntInsnNode {
+            opcodes::SIPUSH => Insn::Int(IntInsnNode {
                 insn: InsnNode { opcode },
                 operand: reader.read_i2()? as i32,
             }),
-            0x12 => Insn::Ldc(LdcInsnNode {
+            opcodes::LDC => Insn::Ldc(LdcInsnNode {
                 insn: InsnNode { opcode },
                 value: LdcValue::Index(reader.read_u1()? as u16),
             }),
-            0x13 | 0x14 => Insn::Ldc(LdcInsnNode {
+            opcodes::LDC_W | opcodes::LDC2_W => Insn::Ldc(LdcInsnNode {
                 insn: InsnNode { opcode },
                 value: LdcValue::Index(reader.read_u2()?),
             }),
-            0x15..=0x19 => Insn::Var(VarInsnNode {
+            opcodes::ILOAD..=opcodes::ALOAD => Insn::Var(VarInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
             }),
-            0x1A..=0x35 => Insn::Simple(InsnNode { opcode }),
-            0x36..=0x3A => Insn::Var(VarInsnNode {
+            opcodes::ILOAD_0..=opcodes::SALOAD => Insn::Simple(InsnNode { opcode }),
+            opcodes::ISTORE..=opcodes::ASTORE => Insn::Var(VarInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
             }),
-            0x3B..=0x56 => Insn::Simple(InsnNode { opcode }),
-            0x57..=0x83 => Insn::Simple(InsnNode { opcode }),
-            0x84 => Insn::Iinc(IincInsnNode {
+            opcodes::ISTORE_0..=opcodes::SASTORE => Insn::Simple(InsnNode { opcode }),
+            opcodes::POP..=opcodes::LXOR => Insn::Simple(InsnNode { opcode }),
+            opcodes::IINC => Insn::Iinc(IincInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
                 increment: reader.read_i1()? as i16,
             }),
-            0x85..=0x98 => Insn::Simple(InsnNode { opcode }),
-            0x99..=0xA8 => Insn::Jump(JumpInsnNode {
+            opcodes::I2L..=opcodes::DCMPG => Insn::Simple(InsnNode { opcode }),
+            opcodes::IFEQ..=opcodes::JSR => Insn::Jump(JumpInsnNode {
                 insn: InsnNode { opcode },
                 offset: reader.read_i2()? as i32,
             }),
-            0xA9 => Insn::Var(VarInsnNode {
+            opcodes::RET => Insn::Var(VarInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
             }),
-            0xAA => read_table_switch(&mut reader, opcode_offset)?,
-            0xAB => read_lookup_switch(&mut reader, opcode_offset)?,
-            0xAC..=0xB1 => Insn::Simple(InsnNode { opcode }),
-            0xB2..=0xB5 => Insn::Field(FieldInsnNode {
+            opcodes::TABLESWITCH => read_table_switch(&mut reader, opcode_offset)?,
+            opcodes::LOOKUPSWITCH => read_lookup_switch(&mut reader, opcode_offset)?,
+            opcodes::IRETURN..=opcodes::RETURN => Insn::Simple(InsnNode { opcode }),
+            opcodes::GETSTATIC..=opcodes::PUTFIELD => Insn::Field(FieldInsnNode {
                 insn: InsnNode { opcode },
                 field_ref: MemberRef::Index(reader.read_u2()?),
             }),
-            0xB6..=0xB8 => Insn::Method(MethodInsnNode {
+            opcodes::INVOKEVIRTUAL..=opcodes::INVOKESTATIC => Insn::Method(MethodInsnNode {
                 insn: InsnNode { opcode },
                 method_ref: MemberRef::Index(reader.read_u2()?),
             }),
-            0xB9 => {
+            opcodes::INVOKEINTERFACE => {
                 let method_index = reader.read_u2()?;
                 let count = reader.read_u1()?;
                 let _ = reader.read_u1()?;
@@ -1134,7 +1135,7 @@ fn parse_code_instructions(code: &[u8]) -> Result<Vec<Insn>, ClassReadError> {
                     count,
                 })
             }
-            0xBA => {
+            opcodes::INVOKEDYNAMIC => {
                 let method_index = reader.read_u2()?;
                 let _ = reader.read_u2()?;
                 Insn::InvokeDynamic(InvokeDynamicInsnNode {
@@ -1142,40 +1143,40 @@ fn parse_code_instructions(code: &[u8]) -> Result<Vec<Insn>, ClassReadError> {
                     method_index,
                 })
             }
-            0xBB => Insn::Type(TypeInsnNode {
+            opcodes::NEW => Insn::Type(TypeInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
             }),
-            0xBC => Insn::Int(IntInsnNode {
+            opcodes::NEWARRAY => Insn::Int(IntInsnNode {
                 insn: InsnNode { opcode },
                 operand: reader.read_u1()? as i32,
             }),
-            0xBD => Insn::Type(TypeInsnNode {
+            opcodes::ANEWARRAY => Insn::Type(TypeInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
             }),
-            0xBE | 0xBF => Insn::Simple(InsnNode { opcode }),
-            0xC0 | 0xC1 => Insn::Type(TypeInsnNode {
+            opcodes::ARRAYLENGTH | opcodes::ATHROW => Insn::Simple(InsnNode { opcode }),
+            opcodes::CHECKCAST | opcodes::INSTANCEOF => Insn::Type(TypeInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
             }),
-            0xC2 | 0xC3 => Insn::Simple(InsnNode { opcode }),
-            0xC4 => read_wide(&mut reader)?,
-            0xC5 => Insn::MultiANewArray(MultiANewArrayInsnNode {
+            opcodes::MONITORENTER | opcodes::MONITOREXIT => Insn::Simple(InsnNode { opcode }),
+            opcodes::WIDE => read_wide(&mut reader)?,
+            opcodes::MULTIANEWARRAY => Insn::MultiANewArray(MultiANewArrayInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
                 dimensions: reader.read_u1()?,
             }),
-            0xC6 | 0xC7 => Insn::Jump(JumpInsnNode {
+            opcodes::IFNULL | opcodes::IFNONNULL => Insn::Jump(JumpInsnNode {
                 insn: InsnNode { opcode },
                 offset: reader.read_i2()? as i32,
             }),
-            0xC8 | 0xC9 => Insn::Jump(JumpInsnNode {
+            opcodes::GOTO_W | opcodes::JSR_W => Insn::Jump(JumpInsnNode {
                 insn: InsnNode { opcode },
                 offset: reader.read_i4()?,
             }),
-            0xCA => Insn::Simple(InsnNode { opcode }),
-            0xFE | 0xFF => Insn::Simple(InsnNode { opcode }),
+            opcodes::BREAKPOINT => Insn::Simple(InsnNode { opcode }),
+            opcodes::IMPDEP1 | opcodes::IMPDEP2 => Insn::Simple(InsnNode { opcode }),
             _ => {
                 return Err(ClassReadError::InvalidOpcode {
                     opcode,
@@ -1210,60 +1211,60 @@ fn parse_code_instructions_with_offsets(
         let opcode_offset = reader.pos();
         let opcode = reader.read_u1()?;
         let insn = match opcode {
-            0x00..=0x0F => Insn::Simple(InsnNode { opcode }),
-            0x10 => Insn::Int(IntInsnNode {
+            opcodes::NOP..=opcodes::DCONST_1 => Insn::Simple(InsnNode { opcode }),
+            opcodes::BIPUSH => Insn::Int(IntInsnNode {
                 insn: InsnNode { opcode },
                 operand: reader.read_i1()? as i32,
             }),
-            0x11 => Insn::Int(IntInsnNode {
+            opcodes::SIPUSH => Insn::Int(IntInsnNode {
                 insn: InsnNode { opcode },
                 operand: reader.read_i2()? as i32,
             }),
-            0x12 => Insn::Ldc(LdcInsnNode {
+            opcodes::LDC => Insn::Ldc(LdcInsnNode {
                 insn: InsnNode { opcode },
                 value: LdcValue::Index(reader.read_u1()? as u16),
             }),
-            0x13 | 0x14 => Insn::Ldc(LdcInsnNode {
+            opcodes::LDC_W | opcodes::LDC2_W => Insn::Ldc(LdcInsnNode {
                 insn: InsnNode { opcode },
                 value: LdcValue::Index(reader.read_u2()?),
             }),
-            0x15..=0x19 => Insn::Var(VarInsnNode {
+            opcodes::ILOAD..=opcodes::ALOAD => Insn::Var(VarInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
             }),
-            0x1A..=0x35 => Insn::Simple(InsnNode { opcode }),
-            0x36..=0x3A => Insn::Var(VarInsnNode {
+            opcodes::ILOAD_0..=opcodes::SALOAD => Insn::Simple(InsnNode { opcode }),
+            opcodes::ISTORE..=opcodes::ASTORE => Insn::Var(VarInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
             }),
-            0x3B..=0x56 => Insn::Simple(InsnNode { opcode }),
-            0x57..=0x83 => Insn::Simple(InsnNode { opcode }),
-            0x84 => Insn::Iinc(IincInsnNode {
+            opcodes::ISTORE_0..=opcodes::SASTORE => Insn::Simple(InsnNode { opcode }),
+            opcodes::POP..=opcodes::LXOR => Insn::Simple(InsnNode { opcode }),
+            opcodes::IINC => Insn::Iinc(IincInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
                 increment: reader.read_i1()? as i16,
             }),
-            0x85..=0x98 => Insn::Simple(InsnNode { opcode }),
-            0x99..=0xA8 => Insn::Jump(JumpInsnNode {
+            opcodes::I2L..=opcodes::DCMPG => Insn::Simple(InsnNode { opcode }),
+            opcodes::IFEQ..=opcodes::JSR => Insn::Jump(JumpInsnNode {
                 insn: InsnNode { opcode },
                 offset: reader.read_i2()? as i32,
             }),
-            0xA9 => Insn::Var(VarInsnNode {
+            opcodes::RET => Insn::Var(VarInsnNode {
                 insn: InsnNode { opcode },
                 var_index: reader.read_u1()? as u16,
             }),
-            0xAA => read_table_switch(&mut reader, opcode_offset)?,
-            0xAB => read_lookup_switch(&mut reader, opcode_offset)?,
-            0xAC..=0xB1 => Insn::Simple(InsnNode { opcode }),
-            0xB2..=0xB5 => Insn::Field(FieldInsnNode {
+            opcodes::TABLESWITCH => read_table_switch(&mut reader, opcode_offset)?,
+            opcodes::LOOKUPSWITCH => read_lookup_switch(&mut reader, opcode_offset)?,
+            opcodes::IRETURN..=opcodes::RETURN => Insn::Simple(InsnNode { opcode }),
+            opcodes::GETSTATIC..=opcodes::PUTFIELD => Insn::Field(FieldInsnNode {
                 insn: InsnNode { opcode },
                 field_ref: MemberRef::Index(reader.read_u2()?),
             }),
-            0xB6..=0xB8 => Insn::Method(MethodInsnNode {
+            opcodes::INVOKEVIRTUAL..=opcodes::INVOKESTATIC => Insn::Method(MethodInsnNode {
                 insn: InsnNode { opcode },
                 method_ref: MemberRef::Index(reader.read_u2()?),
             }),
-            0xB9 => {
+            opcodes::INVOKEINTERFACE => {
                 let method_index = reader.read_u2()?;
                 let count = reader.read_u1()?;
                 let _ = reader.read_u1()?;
@@ -1273,7 +1274,7 @@ fn parse_code_instructions_with_offsets(
                     count,
                 })
             }
-            0xBA => {
+            opcodes::INVOKEDYNAMIC => {
                 let method_index = reader.read_u2()?;
                 let _ = reader.read_u2()?;
                 Insn::InvokeDynamic(InvokeDynamicInsnNode {
@@ -1281,40 +1282,40 @@ fn parse_code_instructions_with_offsets(
                     method_index,
                 })
             }
-            0xBB => Insn::Type(TypeInsnNode {
+            opcodes::NEW => Insn::Type(TypeInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
             }),
-            0xBC => Insn::Int(IntInsnNode {
+            opcodes::NEWARRAY => Insn::Int(IntInsnNode {
                 insn: InsnNode { opcode },
                 operand: reader.read_u1()? as i32,
             }),
-            0xBD => Insn::Type(TypeInsnNode {
+            opcodes::ANEWARRAY => Insn::Type(TypeInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
             }),
-            0xBE | 0xBF => Insn::Simple(InsnNode { opcode }),
-            0xC0 | 0xC1 => Insn::Type(TypeInsnNode {
+            opcodes::ARRAYLENGTH | opcodes::ATHROW => Insn::Simple(InsnNode { opcode }),
+            opcodes::CHECKCAST | opcodes::INSTANCEOF => Insn::Type(TypeInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
             }),
-            0xC2 | 0xC3 => Insn::Simple(InsnNode { opcode }),
-            0xC4 => read_wide(&mut reader)?,
-            0xC5 => Insn::MultiANewArray(MultiANewArrayInsnNode {
+            opcodes::MONITORENTER | opcodes::MONITOREXIT => Insn::Simple(InsnNode { opcode }),
+            opcodes::WIDE => read_wide(&mut reader)?,
+            opcodes::MULTIANEWARRAY => Insn::MultiANewArray(MultiANewArrayInsnNode {
                 insn: InsnNode { opcode },
                 type_index: reader.read_u2()?,
                 dimensions: reader.read_u1()?,
             }),
-            0xC6 | 0xC7 => Insn::Jump(JumpInsnNode {
+            opcodes::IFNULL | opcodes::IFNONNULL => Insn::Jump(JumpInsnNode {
                 insn: InsnNode { opcode },
                 offset: reader.read_i2()? as i32,
             }),
-            0xC8 | 0xC9 => Insn::Jump(JumpInsnNode {
+            opcodes::GOTO_W | opcodes::JSR_W => Insn::Jump(JumpInsnNode {
                 insn: InsnNode { opcode },
                 offset: reader.read_i4()?,
             }),
-            0xCA => Insn::Simple(InsnNode { opcode }),
-            0xFE | 0xFF => Insn::Simple(InsnNode { opcode }),
+            opcodes::BREAKPOINT => Insn::Simple(InsnNode { opcode }),
+            opcodes::IMPDEP1 | opcodes::IMPDEP2 => Insn::Simple(InsnNode { opcode }),
             _ => {
                 return Err(ClassReadError::InvalidOpcode {
                     opcode,
@@ -1436,7 +1437,9 @@ fn read_table_switch(
         offsets.push(reader.read_i4()?);
     }
     Ok(Insn::TableSwitch(TableSwitchInsnNode {
-        insn: InsnNode { opcode: 0xAA },
+        insn: InsnNode {
+            opcode: opcodes::TABLESWITCH,
+        },
         default_offset,
         low,
         high,
@@ -1458,7 +1461,9 @@ fn read_lookup_switch(
         pairs.push((key, offset));
     }
     Ok(Insn::LookupSwitch(LookupSwitchInsnNode {
-        insn: InsnNode { opcode: 0xAB },
+        insn: InsnNode {
+            opcode: opcodes::LOOKUPSWITCH,
+        },
         default_offset,
         pairs,
     }))
@@ -1467,11 +1472,13 @@ fn read_lookup_switch(
 fn read_wide(reader: &mut CodeReader<'_>) -> Result<Insn, ClassReadError> {
     let opcode = reader.read_u1()?;
     match opcode {
-        0x15..=0x19 | 0x36..=0x3A | 0xA9 => Ok(Insn::Var(VarInsnNode {
+        opcodes::ILOAD..=opcodes::ALOAD | opcodes::ISTORE..=opcodes::ASTORE | opcodes::RET => {
+            Ok(Insn::Var(VarInsnNode {
             insn: InsnNode { opcode },
             var_index: reader.read_u2()?,
-        })),
-        0x84 => Ok(Insn::Iinc(IincInsnNode {
+        }))
+        }
+        opcodes::IINC => Ok(Insn::Iinc(IincInsnNode {
             insn: InsnNode { opcode },
             var_index: reader.read_u2()?,
             increment: reader.read_i2()?,
