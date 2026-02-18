@@ -1,4 +1,4 @@
-# asm-rs
+# rust-asm
 
 ObjectWeb ASM implementation in Rust
 
@@ -7,13 +7,13 @@ ObjectWeb ASM implementation in Rust
 Execute this inside your project!
 
 ```shell
-cargo add asm-rs
+cargo add rust-asm
 ```
 
 Or manually add it in Cargo.toml
 
 ```toml
-asm-rs = "<version>"
+rust-asm = "<version>"
 ```
 
 ## Feature
