@@ -7,32 +7,77 @@ use crate::insn::{
 };
 use crate::{constants, opcodes};
 
+/// Represents a constant value loadable by the `LDC` (Load Constant) instruction.
+///
+/// This enum wraps various types of constants that can be stored in the constant pool
+/// and pushed onto the operand stack.
 #[derive(Debug, Clone)]
 pub enum LdcConstant {
+    /// A 32-bit integer constant.
     Integer(i32),
+    /// A 32-bit floating-point constant.
     Float(f32),
+    /// A 64-bit integer constant.
     Long(i64),
+    /// A 64-bit floating-point constant.
     Double(f64),
+    /// A string literal constant.
     String(String),
+    /// A class constant (e.g., `String.class`).
     Class(String),
+    /// A method type constant (MethodDescriptor).
     MethodType(String),
+    /// A method handle constant.
     MethodHandle {
         reference_kind: u8,
         reference_index: u16,
     },
+    /// A dynamic constant (computed via `invokedynamic` bootstrap methods).
     Dynamic,
 }
 
+/// A visitor to visit a Java field.
+///
+/// The methods of this trait must be called in the following order:
+/// `visit_end`.
 pub trait FieldVisitor {
+    /// Visits the end of the field.
+    ///
+    /// This method, which is the last one to be called, is used to inform the
+    /// visitor that all the annotations and attributes of the field have been visited.
     fn visit_end(&mut self) {}
 }
 
 pub trait MethodVisitor {
+    /// Starts the visit of the method's code.
     fn visit_code(&mut self) {}
+
+    /// Visits a zero-operand instruction.
+    ///
+    /// # Arguments
+    /// * `opcode` - The opcode of the instruction to be visited.
     fn visit_insn(&mut self, _opcode: u8) {}
+
+    /// Visits an instruction with a single int operand.
     fn visit_int_insn(&mut self, _opcode: u8, _operand: i32) {}
+
+    /// Visits a local variable instruction.
     fn visit_var_insn(&mut self, _opcode: u8, _var_index: u16) {}
+
+    /// Visits a type instruction.
+    ///
+    /// # Arguments
+    /// * `opcode` - The opcode of the instruction.
+    /// * `type_name` - The internal name of the object or array class.
     fn visit_type_insn(&mut self, _opcode: u8, _type_name: &str) {}
+
+    /// Visits a field instruction.
+    ///
+    /// # Arguments
+    /// * `opcode` - The opcode of the instruction.
+    /// * `owner` - The internal name of the field's owner class.
+    /// * `name` - The field's name.
+    /// * `desc` - The field's descriptor.
     fn visit_field_insn(&mut self, _opcode: u8, _owner: &str, _name: &str, _desc: &str) {}
     fn visit_method_insn(
         &mut self,
@@ -44,7 +89,14 @@ pub trait MethodVisitor {
     ) {
     }
     fn visit_invoke_dynamic_insn(&mut self, _name: &str, _desc: &str) {}
+    /// Visits a jump instruction.
+    ///
+    /// # Arguments
+    /// * `opcode` - The opcode of the instruction.
+    /// * `target_offset` - The offset of the target instruction relative to the current instruction.
     fn visit_jump_insn(&mut self, _opcode: u8, _target_offset: i32) {}
+
+    /// Visits an `LDC` instruction.
     fn visit_ldc_insn(&mut self, _value: LdcConstant) {}
     fn visit_iinc_insn(&mut self, _var_index: u16, _increment: i16) {}
     fn visit_table_switch(&mut self, _default: i32, _low: i32, _high: i32, _targets: &[i32]) {}
@@ -54,7 +106,20 @@ pub trait MethodVisitor {
     fn visit_end(&mut self) {}
 }
 
+/// A visitor to visit a Java class.
+///
+/// The methods of this trait must be called in the following order:
+/// `visit` -> `visit_source` -> (`visit_field` | `visit_method`)* -> `visit_end`.
 pub trait ClassVisitor {
+    /// Visits the header of the class.
+    ///
+    /// # Arguments
+    /// * `major` - The major version number of the class file.
+    /// * `minor` - The minor version number of the class file.
+    /// * `access_flags` - The class's access flags (see `Opcodes`).
+    /// * `name` - The internal name of the class.
+    /// * `super_name` - The internal name of the super class (None for `Object`).
+    /// * `interfaces` - The internal names of the class's interfaces.
     fn visit(
         &mut self,
         _major: u16,
@@ -65,7 +130,13 @@ pub trait ClassVisitor {
         _interfaces: &[String],
     ) {
     }
+
+    /// Visits the source file name of the class.
     fn visit_source(&mut self, _source: &str) {}
+
+    /// Visits a field of the class.
+    ///
+    /// Returns an optional `FieldVisitor` to visit the field's content.
     fn visit_field(
         &mut self,
         _access_flags: u16,
@@ -74,6 +145,10 @@ pub trait ClassVisitor {
     ) -> Option<Box<dyn FieldVisitor>> {
         None
     }
+
+    /// Visits a method of the class.
+    ///
+    /// Returns an optional `MethodVisitor` to visit the method's code.
     fn visit_method(
         &mut self,
         _access_flags: u16,
@@ -82,20 +157,44 @@ pub trait ClassVisitor {
     ) -> Option<Box<dyn MethodVisitor>> {
         None
     }
+
+    /// Visits the end of the class.
     fn visit_end(&mut self) {}
 }
 
+/// A parser to make a [`ClassVisitor`] visit a `ClassFile` structure.
+///
+/// This class parses a byte array conforming to the Java class file format and
+/// calls the appropriate methods of a given class visitor for each field, method,
+/// and bytecode instruction encountered.
 pub struct ClassReader {
     bytes: Vec<u8>,
 }
 
 impl ClassReader {
+    /// Constructs a new `ClassReader` with the given class file bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - A byte slice containing the JVM class file data.
     pub fn new(bytes: &[u8]) -> Self {
         Self {
             bytes: bytes.to_vec(),
         }
     }
 
+    /// Makes the given visitor visit the Java class of this `ClassReader`.
+    ///
+    /// This method parses the class file data and drives the visitor events.
+    ///
+    /// # Arguments
+    ///
+    /// * `visitor` - The visitor that must visit this class.
+    /// * `_options` - Option flags (currently unused, reserve for future parsing options like skipping debug info).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ClassReadError`] if the class file is malformed or contains unsupported versions.
     pub fn accept(
         &self,
         visitor: &mut dyn ClassVisitor,
@@ -168,6 +267,10 @@ impl ClassReader {
         Ok(())
     }
 
+    /// Converts the read class data directly into a `ClassNode`.
+    ///
+    /// This is a convenience method that parses the bytes and builds a
+    /// complete object model of the class.
     pub fn to_class_node(&self) -> Result<crate::nodes::ClassNode, ClassReadError> {
         let class_file = read_class_file(&self.bytes)?;
         class_file.to_class_node()
@@ -1658,5 +1761,146 @@ impl<'a> ByteReader<'a> {
         let bytes = self.data[self.pos..self.pos + len].to_vec();
         self.pos += len;
         Ok(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    // A mock visitor to capture parsing results
+    struct MockClassVisitor {
+        pub visited_name: Rc<RefCell<Option<String>>>,
+        pub visited_methods: Rc<RefCell<Vec<String>>>,
+    }
+
+    impl MockClassVisitor {
+        fn new() -> Self {
+            Self {
+                visited_name: Rc::new(RefCell::new(None)),
+                visited_methods: Rc::new(RefCell::new(Vec::new())),
+            }
+        }
+    }
+
+    impl ClassVisitor for MockClassVisitor {
+        fn visit(
+            &mut self,
+            _major: u16,
+            _minor: u16,
+            _access_flags: u16,
+            name: &str,
+            _super_name: Option<&str>,
+            _interfaces: &[String],
+        ) {
+            *self.visited_name.borrow_mut() = Some(name.to_string());
+        }
+
+        fn visit_method(
+            &mut self,
+            _access_flags: u16,
+            name: &str,
+            _descriptor: &str,
+        ) -> Option<Box<dyn MethodVisitor>> {
+            self.visited_methods.borrow_mut().push(name.to_string());
+            None
+        }
+    }
+
+    /// Helper to generate a minimal valid class file byte array (Java 8).
+    /// Class Name: "TestClass"
+    fn generate_minimal_class() -> Vec<u8> {
+        let mut w = Vec::new();
+        // Magic
+        w.extend_from_slice(&0xCAFEBABE_u32.to_be_bytes());
+        // Version (Java 8 = 52.0)
+        w.extend_from_slice(&0_u16.to_be_bytes()); // minor
+        w.extend_from_slice(&52_u16.to_be_bytes()); // major
+
+        // Constant Pool (Count: 5)
+        // 1: UTF8 "TestClass"
+        // 2: Class #1
+        // 3: UTF8 "java/lang/Object"
+        // 4: Class #3
+        w.extend_from_slice(&5_u16.to_be_bytes()); // Count (N+1)
+
+        // #1 UTF8
+        w.push(1);
+        let name = "TestClass";
+        w.extend_from_slice(&(name.len() as u16).to_be_bytes());
+        w.extend_from_slice(name.as_bytes());
+
+        // #2 Class
+        w.push(7);
+        w.extend_from_slice(&1_u16.to_be_bytes());
+
+        // #3 UTF8
+        w.push(1);
+        let obj = "java/lang/Object";
+        w.extend_from_slice(&(obj.len() as u16).to_be_bytes());
+        w.extend_from_slice(obj.as_bytes());
+
+        // #4 Class
+        w.push(7);
+        w.extend_from_slice(&3_u16.to_be_bytes());
+
+        // Access Flags (PUBLIC)
+        w.extend_from_slice(&0x0021_u16.to_be_bytes());
+        // This Class (#2)
+        w.extend_from_slice(&2_u16.to_be_bytes());
+        // Super Class (#4)
+        w.extend_from_slice(&4_u16.to_be_bytes());
+
+        // Interfaces Count
+        w.extend_from_slice(&0_u16.to_be_bytes());
+        // Fields Count
+        w.extend_from_slice(&0_u16.to_be_bytes());
+        // Methods Count
+        w.extend_from_slice(&0_u16.to_be_bytes());
+        // Attributes Count
+        w.extend_from_slice(&0_u16.to_be_bytes());
+
+        w
+    }
+
+    #[test]
+    fn test_class_reader_header() {
+        let bytes = generate_minimal_class();
+        let reader = ClassReader::new(&bytes);
+        let mut visitor = MockClassVisitor::new();
+
+        let result = reader.accept(&mut visitor, 0);
+
+        assert!(result.is_ok(), "Should parse valid class file");
+        assert_eq!(
+            *visitor.visited_name.borrow(),
+            Some("TestClass".to_string())
+        );
+    }
+
+    #[test]
+    fn test_invalid_magic() {
+        // expected CA FE BA BE
+        let bytes = vec![0x00, 0x00, 0x00, 0x00];
+        let reader = ClassReader::new(&bytes);
+        let mut visitor = MockClassVisitor::new();
+
+        let result = reader.accept(&mut visitor, 0);
+        assert!(matches!(result, Err(ClassReadError::InvalidMagic(_))));
+    }
+
+    #[test]
+    fn test_code_reader_alignment() {
+        // Test internal alignment logic for switch instructions
+        let data = vec![0x00, 0x00, 0x00, 0x00]; // 4 bytes
+        let mut reader = super::CodeReader::new(&data);
+
+        // If we are at pos 1, padding to 4-byte boundary
+        reader.pos = 1;
+        // 1 -> align 4 -> skips 3 bytes -> pos 4
+        assert!(reader.align4(0).is_ok());
+        assert_eq!(reader.pos(), 4);
     }
 }

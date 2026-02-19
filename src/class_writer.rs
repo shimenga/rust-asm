@@ -13,9 +13,22 @@ use crate::insn::{
 use crate::nodes::{ClassNode, FieldNode, MethodNode};
 use crate::opcodes;
 
+/// Flag to automatically compute the stack map frames.
+///
+/// When this flag is passed to the `ClassWriter`, it calculates the `StackMapTable`
+/// attribute based on the bytecode instructions. This requires the `compute_maxs` logic as well.
 pub const COMPUTE_FRAMES: u32 = 0x1;
+
+/// Flag to automatically compute the maximum stack size and local variables.
+///
+/// When this flag is set, the writer will calculate `max_stack` and `max_locals`
+/// for methods, ignoring the values provided in `visit_maxs`.
 pub const COMPUTE_MAXS: u32 = 0x2;
 
+/// A builder for the constant pool of a class.
+///
+/// This struct manages the deduplication of constant pool entries, ensuring that
+/// strings, classes, and member references are stored efficiently.
 #[derive(Debug, Default)]
 pub struct ConstantPoolBuilder {
     cp: Vec<CpInfo>,
@@ -28,6 +41,9 @@ pub struct ConstantPoolBuilder {
 }
 
 impl ConstantPoolBuilder {
+    /// Creates a new, empty `ConstantPoolBuilder`.
+    ///
+    /// The constant pool starts with a dummy entry at index 0, as per JVM spec.
     pub fn new() -> Self {
         Self {
             cp: vec![CpInfo::Unusable],
@@ -35,10 +51,14 @@ impl ConstantPoolBuilder {
         }
     }
 
+    /// Consumes the builder and returns the raw vector of `CpInfo` entries.
     pub fn into_pool(self) -> Vec<CpInfo> {
         self.cp
     }
 
+    /// Adds a UTF-8 string to the constant pool if it doesn't exist.
+    ///
+    /// Returns the index of the entry.
     pub fn utf8(&mut self, value: &str) -> u16 {
         if let Some(index) = self.utf8.get(value) {
             return *index;
@@ -48,6 +68,9 @@ impl ConstantPoolBuilder {
         index
     }
 
+    /// Adds a Class constant to the pool.
+    ///
+    /// This will recursively add the UTF-8 name of the class.
     pub fn class(&mut self, name: &str) -> u16 {
         if let Some(index) = self.class.get(name) {
             return *index;
@@ -58,6 +81,9 @@ impl ConstantPoolBuilder {
         index
     }
 
+    /// Adds a String constant to the pool.
+    ///
+    /// This is for string literals (e.g., `ldc "foo"`).
     pub fn string(&mut self, value: &str) -> u16 {
         if let Some(index) = self.string.get(value) {
             return *index;
@@ -68,6 +94,9 @@ impl ConstantPoolBuilder {
         index
     }
 
+    /// Adds a NameAndType constant to the pool.
+    ///
+    /// Used for field and method descriptors.
     pub fn name_and_type(&mut self, name: &str, descriptor: &str) -> u16 {
         let key = (name.to_string(), descriptor.to_string());
         if let Some(index) = self.name_and_type.get(&key) {
@@ -83,6 +112,7 @@ impl ConstantPoolBuilder {
         index
     }
 
+    /// Adds a Fieldref constant to the pool.
     pub fn field_ref(&mut self, owner: &str, name: &str, descriptor: &str) -> u16 {
         let key = (owner.to_string(), name.to_string(), descriptor.to_string());
         if let Some(index) = self.field_ref.get(&key) {
@@ -98,6 +128,7 @@ impl ConstantPoolBuilder {
         index
     }
 
+    /// Adds a Methodref constant to the pool.
     pub fn method_ref(&mut self, owner: &str, name: &str, descriptor: &str) -> u16 {
         let key = (owner.to_string(), name.to_string(), descriptor.to_string());
         if let Some(index) = self.method_ref.get(&key) {
@@ -134,6 +165,26 @@ struct MethodData {
     attributes: Vec<AttributeInfo>,
 }
 
+/// A writer that generates a Java Class File structure.
+///
+/// This is the main entry point for creating class files programmatically.
+/// It allows visiting the class header, fields, methods, and attributes.
+///
+/// # Example
+///
+/// ```rust
+/// use crate::{ClassWriter, COMPUTE_FRAMES, opcodes};
+///
+/// let mut cw = ClassWriter::new(COMPUTE_FRAMES);
+/// cw.visit(52, 0, 1, "com/example/MyClass", Some("java/lang/Object"), &[]);
+///
+/// let mut mv = cw.visit_method(1, "myMethod", "()V");
+/// mv.visit_code();
+/// mv.visit_insn(opcodes::RETURN);
+/// mv.visit_maxs(0, 0); // Computed automatically due to COMPUTE_FRAMES
+///
+/// let bytes = cw.to_bytes().unwrap();
+/// ```
 pub struct ClassWriter {
     options: u32,
     minor_version: u16,
@@ -150,6 +201,11 @@ pub struct ClassWriter {
 }
 
 impl ClassWriter {
+    /// Creates a new `ClassWriter`.
+    ///
+    /// # Arguments
+    ///
+    /// * `options` - Bitwise flags to control generation (e.g., `COMPUTE_FRAMES`, `COMPUTE_MAXS`).
     pub fn new(options: u32) -> Self {
         Self {
             options,
@@ -167,6 +223,16 @@ impl ClassWriter {
         }
     }
 
+    /// Defines the header of the class.
+    ///
+    /// # Arguments
+    ///
+    /// * `major` - The major version (e.g., 52 for Java 8).
+    /// * `minor` - The minor version.
+    /// * `access_flags` - Access modifiers (e.g., public, final).
+    /// * `name` - The internal name of the class (e.g., "java/lang/String").
+    /// * `super_name` - The internal name of the super class (None for Object).
+    /// * `interfaces` - A list of interfaces implemented by this class.
     pub fn visit(
         &mut self,
         major: u16,
@@ -188,11 +254,16 @@ impl ClassWriter {
         self
     }
 
+    /// Sets the source file name attribute for the class.
     pub fn visit_source_file(&mut self, name: &str) -> &mut Self {
         self.source_file = Some(name.to_string());
         self
     }
 
+    /// Visits a method of the class.
+    ///
+    /// Returns a `MethodVisitor` that should be used to define the method body.
+    /// The `visit_end` method of the returned visitor must be called to attach it to the class.
     pub fn visit_method(
         &mut self,
         access_flags: u16,
@@ -202,17 +273,20 @@ impl ClassWriter {
         MethodVisitor::new(access_flags, name, descriptor)
     }
 
+    /// Visits a field of the class.
+    ///
+    /// Returns a `FieldVisitor` to define field attributes.
     pub fn visit_field(&mut self, access_flags: u16, name: &str, descriptor: &str) -> FieldVisitor {
         FieldVisitor::new(access_flags, name, descriptor)
     }
 
+    /// Adds a custom attribute to the class.
     pub fn add_attribute(&mut self, attr: AttributeInfo) -> &mut Self {
         self.attributes.push(attr);
         self
     }
 
-    pub fn visit_end(&mut self) {}
-
+    /// Converts the builder state into a `ClassNode` object model.
     pub fn to_class_node(mut self) -> Result<ClassNode, String> {
         if self.name.is_empty() {
             return Err("missing class name, call visit() first".to_string());
@@ -283,6 +357,10 @@ impl ClassWriter {
         })
     }
 
+    /// Generates the raw byte vector representing the .class file.
+    ///
+    /// This method performs all necessary computations (stack map frames, max stack size)
+    /// based on the options provided in `new`.
     pub fn to_bytes(self) -> Result<Vec<u8>, ClassWriteError> {
         let options = self.options;
         let class_node = self
@@ -299,6 +377,10 @@ impl ClassWriter {
     }
 }
 
+/// A visitor to visit a Java method.
+///
+/// Used to generate the bytecode instructions, exception tables, and attributes
+/// for a specific method.
 pub struct MethodVisitor {
     access_flags: u16,
     name: String,
@@ -313,7 +395,7 @@ pub struct MethodVisitor {
 }
 
 impl MethodVisitor {
-    fn new(access_flags: u16, name: &str, descriptor: &str) -> Self {
+    pub fn new(access_flags: u16, name: &str, descriptor: &str) -> Self {
         Self {
             access_flags,
             name: name.to_string(),
@@ -328,16 +410,19 @@ impl MethodVisitor {
         }
     }
 
+    /// Starts the visit of the method's code.
     pub fn visit_code(&mut self) -> &mut Self {
         self.has_code = true;
         self
     }
 
+    /// Visits a zero-operand instruction (e.g., NOP, RETURN).
     pub fn visit_insn(&mut self, opcode: u8) -> &mut Self {
         self.insns.add(Into::<InsnNode>::into(opcode));
         self
     }
 
+    /// Visits a local variable instruction (e.g., ILOAD, ASTORE).
     pub fn visit_var_insn(&mut self, opcode: u8, var_index: u16) -> &mut Self {
         self.insns.add(VarInsnNode {
             insn: opcode.into(),
@@ -346,6 +431,7 @@ impl MethodVisitor {
         self
     }
 
+    /// Visits a field instruction (e.g., GETFIELD, PUTSTATIC).
     pub fn visit_field_insn(
         &mut self,
         opcode: u8,
@@ -358,6 +444,7 @@ impl MethodVisitor {
         self
     }
 
+    /// Visits a method instruction (e.g., INVOKEVIRTUAL).
     pub fn visit_method_insn(
         &mut self,
         opcode: u8,
@@ -371,17 +458,23 @@ impl MethodVisitor {
         self
     }
 
+    /// Visits a constant instruction (LDC).
     pub fn visit_ldc_insn(&mut self, value: &str) -> &mut Self {
         self.insns.add(LdcInsnNode::string(value));
         self
     }
 
+    /// Visits the maximum stack size and number of local variables.
+    ///
+    /// If `COMPUTE_MAXS` or `COMPUTE_FRAMES` was passed to the ClassWriter,
+    /// these values may be ignored or recomputed.
     pub fn visit_maxs(&mut self, max_stack: u16, max_locals: u16) -> &mut Self {
         self.max_stack = max_stack;
         self.max_locals = max_locals;
         self
     }
 
+    /// Finalizes the method and attaches it to the parent `ClassWriter`.
     pub fn visit_end(mut self, class: &mut ClassWriter) {
         let code = if self.has_code || !self.insns.insns().is_empty() {
             Some(build_code_attribute(
@@ -405,6 +498,7 @@ impl MethodVisitor {
     }
 }
 
+/// A visitor to visit a Java field.
 pub struct FieldVisitor {
     access_flags: u16,
     name: String,
@@ -413,7 +507,7 @@ pub struct FieldVisitor {
 }
 
 impl FieldVisitor {
-    fn new(access_flags: u16, name: &str, descriptor: &str) -> Self {
+    pub fn new(access_flags: u16, name: &str, descriptor: &str) -> Self {
         Self {
             access_flags,
             name: name.to_string(),
@@ -422,11 +516,13 @@ impl FieldVisitor {
         }
     }
 
+    /// Adds an attribute to the field.
     pub fn add_attribute(&mut self, attr: AttributeInfo) -> &mut Self {
         self.attributes.push(attr);
         self
     }
 
+    /// Finalizes the field and attaches it to the parent `ClassWriter`.
     pub fn visit_end(self, class: &mut ClassWriter) {
         class.fields.push(FieldData {
             access_flags: self.access_flags,
@@ -3008,4 +3104,100 @@ fn read_i4(code: &[u8], pos: &mut usize) -> Result<i32, ClassWriteError> {
     let value = i32::from_be_bytes([code[*pos], code[*pos + 1], code[*pos + 2], code[*pos + 3]]);
     *pos += 4;
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::opcodes;
+
+    #[test]
+    fn test_constant_pool_deduplication() {
+        let mut cp = ConstantPoolBuilder::new();
+        let i1 = cp.utf8("Hello");
+        let i2 = cp.utf8("World");
+        let i3 = cp.utf8("Hello");
+
+        assert_eq!(i1, 1);
+        assert_eq!(i2, 2);
+        assert_eq!(i3, 1, "Duplicate UTF8 should return existing index");
+
+        let c1 = cp.class("java/lang/Object");
+        let c2 = cp.class("java/lang/Object");
+        assert_eq!(c1, c2, "Duplicate Class should return existing index");
+    }
+
+    #[test]
+    fn test_basic_class_generation() {
+        let mut cw = ClassWriter::new(0);
+        cw.visit(52, 0, 0x0001, "TestClass", Some("java/lang/Object"), &[]);
+        cw.visit_source_file("TestClass.java");
+
+        // Add a field
+        let mut fv = cw.visit_field(0x0002, "myField", "I");
+        fv.visit_end(&mut cw);
+
+        // Add a default constructor
+        let mut mv = cw.visit_method(0x0001, "<init>", "()V");
+        mv.visit_code();
+        mv.visit_var_insn(opcodes::ALOAD, 0);
+        mv.visit_method_insn(
+            opcodes::INVOKESPECIAL,
+            "java/lang/Object",
+            "<init>",
+            "()V",
+            false,
+        );
+        mv.visit_insn(opcodes::RETURN);
+        mv.visit_maxs(1, 1);
+        mv.visit_end(&mut cw);
+
+        let result = cw.to_bytes();
+        assert!(result.is_ok(), "Should generate bytes successfully");
+
+        let bytes = result.unwrap();
+        assert!(bytes.len() > 4);
+        assert_eq!(&bytes[0..4], &[0xCA, 0xFE, 0xBA, 0xBE]); // Magic number
+    }
+
+    #[test]
+    fn test_compute_frames_flag() {
+        // Simple linear code, but checking if logic runs without panic
+        let mut cw = ClassWriter::new(COMPUTE_FRAMES);
+        cw.visit(52, 0, 0x0001, "FrameTest", Some("java/lang/Object"), &[]);
+
+        let mut mv = cw.visit_method(0x0009, "main", "([Ljava/lang/String;)V");
+        mv.visit_code();
+        mv.visit_field_insn(
+            opcodes::GETSTATIC,
+            "java/lang/System",
+            "out",
+            "Ljava/io/PrintStream;",
+        );
+        mv.visit_ldc_insn("Hello");
+        mv.visit_method_insn(
+            opcodes::INVOKEVIRTUAL,
+            "java/io/PrintStream",
+            "println",
+            "(Ljava/lang/String;)V",
+            false,
+        );
+        mv.visit_insn(opcodes::RETURN);
+        // maxs should be ignored/recomputed
+        mv.visit_maxs(0, 0);
+        mv.visit_end(&mut cw);
+
+        let result = cw.to_bytes();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_class_node_structure() {
+        let mut cw = ClassWriter::new(0);
+        cw.visit(52, 0, 0, "MyNode", None, &[]);
+
+        let node = cw.to_class_node().expect("Should create class node");
+        assert_eq!(node.name, "MyNode");
+        assert_eq!(node.major_version, 52);
+    }
 }
