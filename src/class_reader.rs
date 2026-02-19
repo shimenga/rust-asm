@@ -1139,7 +1139,7 @@ fn decode_modified_utf8(bytes: &[u8]) -> Result<String, ClassReadError> {
 }
 
 fn parse_code_instructions(code: &[u8]) -> Result<Vec<Insn>, ClassReadError> {
-    let mut reader = CodeReader::new(code);
+    let mut reader = ByteReader::new(code);
     let mut insns = Vec::new();
 
     while reader.remaining() > 0 {
@@ -1278,7 +1278,7 @@ struct ParsedInstruction {
 fn parse_code_instructions_with_offsets(
     code: &[u8],
 ) -> Result<Vec<ParsedInstruction>, ClassReadError> {
-    let mut reader = CodeReader::new(code);
+    let mut reader = ByteReader::new(code);
     let mut insns = Vec::new();
 
     while reader.remaining() > 0 {
@@ -1494,7 +1494,7 @@ pub(crate) fn build_insn_nodes_public(
 }
 
 fn read_table_switch(
-    reader: &mut CodeReader<'_>,
+    reader: &mut ByteReader<'_>,
     opcode_offset: usize,
 ) -> Result<Insn, ClassReadError> {
     reader.align4(opcode_offset)?;
@@ -1520,7 +1520,7 @@ fn read_table_switch(
 }
 
 fn read_lookup_switch(
-    reader: &mut CodeReader<'_>,
+    reader: &mut ByteReader<'_>,
     opcode_offset: usize,
 ) -> Result<Insn, ClassReadError> {
     reader.align4(opcode_offset)?;
@@ -1539,7 +1539,7 @@ fn read_lookup_switch(
     }))
 }
 
-fn read_wide(reader: &mut CodeReader<'_>) -> Result<Insn, ClassReadError> {
+fn read_wide(reader: &mut ByteReader<'_>) -> Result<Insn, ClassReadError> {
     let opcode = reader.read_u1()?;
     match opcode {
         opcodes::ILOAD..=opcodes::ALOAD | opcodes::ISTORE..=opcodes::ASTORE | opcodes::RET => {
@@ -1650,12 +1650,12 @@ fn visit_instruction(
     Ok(())
 }
 
-struct CodeReader<'a> {
+struct ByteReader<'a> {
     data: &'a [u8],
     pos: usize,
 }
 
-impl<'a> CodeReader<'a> {
+impl<'a> ByteReader<'a> {
     fn new(data: &'a [u8]) -> Self {
         Self { data, pos: 0 }
     }
@@ -1699,52 +1699,14 @@ impl<'a> CodeReader<'a> {
         Ok(self.read_u2()? as i16)
     }
 
-    fn read_i4(&mut self) -> Result<i32, ClassReadError> {
-        let bytes = self.read_bytes(4)?;
-        Ok(i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-    }
-
-    fn read_bytes(&mut self, len: usize) -> Result<Vec<u8>, ClassReadError> {
-        if self.pos + len > self.data.len() {
-            return Err(ClassReadError::UnexpectedEof);
-        }
-        let bytes = self.data[self.pos..self.pos + len].to_vec();
-        self.pos += len;
-        Ok(bytes)
-    }
-}
-
-struct ByteReader<'a> {
-    data: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> ByteReader<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
-    }
-
-    fn remaining(&self) -> usize {
-        self.data.len().saturating_sub(self.pos)
-    }
-
-    fn read_u1(&mut self) -> Result<u8, ClassReadError> {
-        if self.pos >= self.data.len() {
-            return Err(ClassReadError::UnexpectedEof);
-        }
-        let value = self.data[self.pos];
-        self.pos += 1;
-        Ok(value)
-    }
-
-    fn read_u2(&mut self) -> Result<u16, ClassReadError> {
-        let bytes = self.read_bytes(2)?;
-        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
-    }
-
     fn read_u4(&mut self) -> Result<u32, ClassReadError> {
         let bytes = self.read_bytes(4)?;
         Ok(u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
+    fn read_i4(&mut self) -> Result<i32, ClassReadError> {
+        let bytes = self.read_bytes(4)?;
+        Ok(i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
     fn read_u8(&mut self) -> Result<u64, ClassReadError> {
@@ -1895,7 +1857,7 @@ mod tests {
     fn test_code_reader_alignment() {
         // Test internal alignment logic for switch instructions
         let data = vec![0x00, 0x00, 0x00, 0x00]; // 4 bytes
-        let mut reader = super::CodeReader::new(&data);
+        let mut reader = super::ByteReader::new(&data);
 
         // If we are at pos 1, padding to 4-byte boundary
         reader.pos = 1;
