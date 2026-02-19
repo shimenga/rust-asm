@@ -5,37 +5,13 @@ use crate::class_reader::{
     LineNumber, LocalVariable, MethodParameter, StackMapFrame, VerificationTypeInfo,
 };
 use crate::constants;
+use crate::error::ClassWriteError;
 use crate::insn::{
     FieldInsnNode, Insn, InsnList, InsnNode, LdcInsnNode, LdcValue, MemberRef, MethodInsnNode,
     VarInsnNode,
 };
 use crate::nodes::{ClassNode, FieldNode, MethodNode};
 use crate::opcodes;
-
-#[derive(Debug)]
-pub enum ClassWriteError {
-    MissingConstantPool,
-    InvalidConstantPool,
-    InvalidOpcode { opcode: u8, offset: usize },
-    FrameComputation(String),
-}
-
-impl std::fmt::Display for ClassWriteError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClassWriteError::MissingConstantPool => write!(f, "missing constant pool"),
-            ClassWriteError::InvalidConstantPool => write!(f, "invalid constant pool"),
-            ClassWriteError::InvalidOpcode { opcode, offset } => {
-                write!(f, "invalid opcode 0x{opcode:02X} at offset {offset}")
-            }
-            ClassWriteError::FrameComputation(message) => {
-                write!(f, "frame computation error: {message}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for ClassWriteError {}
 
 pub const COMPUTE_FRAMES: u32 = 0x1;
 pub const COMPUTE_MAXS: u32 = 0x2;
@@ -205,7 +181,10 @@ impl ClassWriter {
         self.access_flags = access_flags;
         self.name = name.to_string();
         self.super_name = super_name.map(|value| value.to_string());
-        self.interfaces = interfaces.iter().map(|value| (*value).to_string()).collect();
+        self.interfaces = interfaces
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect();
         self
     }
 
@@ -223,12 +202,7 @@ impl ClassWriter {
         MethodVisitor::new(access_flags, name, descriptor)
     }
 
-    pub fn visit_field(
-        &mut self,
-        access_flags: u16,
-        name: &str,
-        descriptor: &str,
-    ) -> FieldVisitor {
+    pub fn visit_field(&mut self, access_flags: u16, name: &str, descriptor: &str) -> FieldVisitor {
         FieldVisitor::new(access_flags, name, descriptor)
     }
 
@@ -286,8 +260,9 @@ impl ClassWriter {
 
         if let Some(source_name) = self.source_file.as_ref() {
             let source_index = self.cp.utf8(source_name);
-            self.attributes
-                .push(AttributeInfo::SourceFile { sourcefile_index: source_index });
+            self.attributes.push(AttributeInfo::SourceFile {
+                sourcefile_index: source_index,
+            });
         }
 
         Ok(ClassNode {
@@ -378,7 +353,8 @@ impl MethodVisitor {
         name: &str,
         descriptor: &str,
     ) -> &mut Self {
-        self.insns.add(FieldInsnNode::new(opcode, owner, name, descriptor));
+        self.insns
+            .add(FieldInsnNode::new(opcode, owner, name, descriptor));
         self
     }
 
@@ -390,7 +366,8 @@ impl MethodVisitor {
         descriptor: &str,
         _is_interface: bool,
     ) -> &mut Self {
-        self.insns.add(MethodInsnNode::new(opcode, owner, name, descriptor));
+        self.insns
+            .add(MethodInsnNode::new(opcode, owner, name, descriptor));
         self
     }
 
@@ -644,10 +621,7 @@ fn resolve_field_ref(node: FieldInsnNode, cp: &mut ConstantPoolBuilder) -> (u16,
     }
 }
 
-fn resolve_method_ref(
-    node: MethodInsnNode,
-    cp: &mut ConstantPoolBuilder,
-) -> (u16, MethodInsnNode) {
+fn resolve_method_ref(node: MethodInsnNode, cp: &mut ConstantPoolBuilder) -> (u16, MethodInsnNode) {
     match node.method_ref {
         MemberRef::Index(index) => (index, node),
         MemberRef::Symbolic {
@@ -1931,9 +1905,9 @@ fn parse_instructions(code: &[u8]) -> Result<Vec<ParsedInstruction>, ClassWriteE
             opcodes::SIPUSH => Operand::I2(read_i2(code, &mut pos)?),
             opcodes::LDC => Operand::U1(read_u1(code, &mut pos)?),
             opcodes::LDC_W | opcodes::LDC2_W => Operand::U2(read_u2(code, &mut pos)?),
-            opcodes::ILOAD..=opcodes::ALOAD
-            | opcodes::ISTORE..=opcodes::ASTORE
-            | opcodes::RET => Operand::U1(read_u1(code, &mut pos)?),
+            opcodes::ILOAD..=opcodes::ALOAD | opcodes::ISTORE..=opcodes::ASTORE | opcodes::RET => {
+                Operand::U1(read_u1(code, &mut pos)?)
+            }
             opcodes::IINC => {
                 let index = read_u1(code, &mut pos)? as u16;
                 let inc = read_i1(code, &mut pos)? as i16;

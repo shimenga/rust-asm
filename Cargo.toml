@@ -6,3 +6,4 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
+thiserror = "2"

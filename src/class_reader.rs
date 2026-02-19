@@ -1,5 +1,4 @@
-use std::fmt;
-
+use crate::error::ClassReadError;
 use crate::insn::{
     AbstractInsnNode, FieldInsnNode, IincInsnNode, Insn, InsnNode, IntInsnNode,
     InvokeDynamicInsnNode, InvokeInterfaceInsnNode, JumpInsnNode, LabelNode, LdcInsnNode, LdcValue,
@@ -7,39 +6,6 @@ use crate::insn::{
     TryCatchBlockNode, TypeInsnNode, VarInsnNode,
 };
 use crate::{constants, opcodes};
-
-#[derive(Debug)]
-pub enum ClassReadError {
-    UnexpectedEof,
-    InvalidMagic(u32),
-    InvalidClassVersion(u16),
-    InvalidConstantPoolTag(u8),
-    InvalidIndex(u16),
-    InvalidAttribute(String),
-    InvalidOpcode { opcode: u8, offset: usize },
-    Utf8Error(String),
-}
-
-impl fmt::Display for ClassReadError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ClassReadError::UnexpectedEof => write!(f, "unexpected end of input"),
-            ClassReadError::InvalidMagic(magic) => write!(f, "invalid magic 0x{magic:08x}"),
-            ClassReadError::InvalidClassVersion(version) => write!(f, "invalid class major version {version}"),
-            ClassReadError::InvalidConstantPoolTag(tag) => {
-                write!(f, "invalid constant pool tag {tag}")
-            }
-            ClassReadError::InvalidIndex(index) => write!(f, "invalid constant pool index {index}"),
-            ClassReadError::InvalidAttribute(name) => write!(f, "invalid attribute {name}"),
-            ClassReadError::InvalidOpcode { opcode, offset } => {
-                write!(f, "invalid opcode 0x{opcode:02x} at {offset}")
-            }
-            ClassReadError::Utf8Error(msg) => write!(f, "modified utf8 error: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for ClassReadError {}
 
 #[derive(Debug, Clone)]
 pub enum LdcConstant {
@@ -1479,9 +1445,9 @@ fn read_wide(reader: &mut CodeReader<'_>) -> Result<Insn, ClassReadError> {
     match opcode {
         opcodes::ILOAD..=opcodes::ALOAD | opcodes::ISTORE..=opcodes::ASTORE | opcodes::RET => {
             Ok(Insn::Var(VarInsnNode {
-            insn: InsnNode { opcode },
-            var_index: reader.read_u2()?,
-        }))
+                insn: InsnNode { opcode },
+                var_index: reader.read_u2()?,
+            }))
         }
         opcodes::IINC => Ok(Insn::Iinc(IincInsnNode {
             insn: InsnNode { opcode },
