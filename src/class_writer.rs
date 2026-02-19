@@ -7,7 +7,8 @@ use crate::class_reader::{
 use crate::constants;
 use crate::error::ClassWriteError;
 use crate::insn::{
-    FieldInsnNode, Insn, InsnList, InsnNode, LdcInsnNode, LdcValue, MemberRef, MethodInsnNode,
+    AbstractInsnNode, FieldInsnNode, Insn, InsnNode, JumpInsnNode, JumpLabelInsnNode, Label,
+    LabelNode, LdcInsnNode, LdcValue, LineNumberInsnNode, MemberRef, MethodInsnNode, NodeList,
     VarInsnNode,
 };
 use crate::nodes::{ClassNode, FieldNode, MethodNode};
@@ -388,7 +389,7 @@ pub struct MethodVisitor {
     has_code: bool,
     max_stack: u16,
     max_locals: u16,
-    insns: InsnList,
+    insns: NodeList,
     exception_table: Vec<ExceptionTableEntry>,
     code_attributes: Vec<AttributeInfo>,
     attributes: Vec<AttributeInfo>,
@@ -403,7 +404,7 @@ impl MethodVisitor {
             has_code: false,
             max_stack: 0,
             max_locals: 0,
-            insns: InsnList::new(),
+            insns: NodeList::new(),
             exception_table: Vec::new(),
             code_attributes: Vec::new(),
             attributes: Vec::new(),
@@ -418,16 +419,16 @@ impl MethodVisitor {
 
     /// Visits a zero-operand instruction (e.g., NOP, RETURN).
     pub fn visit_insn(&mut self, opcode: u8) -> &mut Self {
-        self.insns.add(Into::<InsnNode>::into(opcode));
+        self.insns.add(Insn::from(Into::<InsnNode>::into(opcode)));
         self
     }
 
     /// Visits a local variable instruction (e.g., ILOAD, ASTORE).
     pub fn visit_var_insn(&mut self, opcode: u8, var_index: u16) -> &mut Self {
-        self.insns.add(VarInsnNode {
+        self.insns.add(Insn::Var(VarInsnNode {
             insn: opcode.into(),
             var_index,
-        });
+        }));
         self
     }
 
@@ -439,8 +440,9 @@ impl MethodVisitor {
         name: &str,
         descriptor: &str,
     ) -> &mut Self {
-        self.insns
-            .add(FieldInsnNode::new(opcode, owner, name, descriptor));
+        self.insns.add(Insn::Field(FieldInsnNode::new(
+            opcode, owner, name, descriptor,
+        )));
         self
     }
 
@@ -453,14 +455,33 @@ impl MethodVisitor {
         descriptor: &str,
         _is_interface: bool,
     ) -> &mut Self {
-        self.insns
-            .add(MethodInsnNode::new(opcode, owner, name, descriptor));
+        self.insns.add(Insn::Method(MethodInsnNode::new(
+            opcode, owner, name, descriptor,
+        )));
+        self
+    }
+
+    pub fn visit_jump_insn(&mut self, opcode: u8, target: Label) -> &mut Self {
+        self.insns.add(JumpLabelInsnNode {
+            insn: opcode.into(),
+            target: LabelNode::from_label(target),
+        });
+        self
+    }
+
+    pub fn visit_label(&mut self, label: Label) -> &mut Self {
+        self.insns.add(LabelNode::from_label(label));
+        self
+    }
+
+    pub fn visit_line_number(&mut self, line: u16, start: LabelNode) -> &mut Self {
+        self.insns.add(LineNumberInsnNode::new(line, start));
         self
     }
 
     /// Visits a constant instruction (LDC).
     pub fn visit_ldc_insn(&mut self, value: &str) -> &mut Self {
-        self.insns.add(LdcInsnNode::string(value));
+        self.insns.add(Insn::Ldc(LdcInsnNode::string(value)));
         self
     }
 
@@ -476,7 +497,7 @@ impl MethodVisitor {
 
     /// Finalizes the method and attaches it to the parent `ClassWriter`.
     pub fn visit_end(mut self, class: &mut ClassWriter) {
-        let code = if self.has_code || !self.insns.insns().is_empty() {
+        let code = if self.has_code || !self.insns.nodes().is_empty() {
             Some(build_code_attribute(
                 self.max_stack,
                 self.max_locals,
@@ -536,13 +557,13 @@ impl FieldVisitor {
 struct CodeBody {
     max_stack: u16,
     max_locals: u16,
-    insns: InsnList,
+    insns: NodeList,
     exception_table: Vec<ExceptionTableEntry>,
     attributes: Vec<AttributeInfo>,
 }
 
 impl CodeBody {
-    fn new(max_stack: u16, max_locals: u16, insns: InsnList) -> Self {
+    fn new(max_stack: u16, max_locals: u16, insns: NodeList) -> Self {
         Self {
             max_stack,
             max_locals,
@@ -555,27 +576,121 @@ impl CodeBody {
     fn build(self, cp: &mut ConstantPoolBuilder) -> CodeAttribute {
         let mut code = Vec::new();
         let mut instructions = Vec::new();
-        for insn in self.insns.into_insns() {
-            let resolved = emit_insn(&mut code, insn, cp);
-            instructions.push(resolved);
+        let mut insn_nodes = Vec::new();
+        let mut label_offsets: HashMap<usize, u16> = HashMap::new();
+        let mut pending_lines: Vec<LineNumberInsnNode> = Vec::new();
+        let mut jump_fixups: Vec<JumpFixup> = Vec::new();
+        for node in self.insns.into_nodes() {
+            match node {
+                AbstractInsnNode::Insn(insn) => {
+                    let resolved = emit_insn(&mut code, insn, cp);
+                    instructions.push(resolved.clone());
+                    insn_nodes.push(AbstractInsnNode::Insn(resolved));
+                }
+                AbstractInsnNode::JumpLabel(node) => {
+                    let opcode = node.insn.opcode;
+                    let start = code.len();
+                    code.push(opcode);
+                    if is_wide_jump(opcode) {
+                        write_i4(&mut code, 0);
+                    } else {
+                        write_i2(&mut code, 0);
+                    }
+                    let insn = Insn::Jump(JumpInsnNode {
+                        insn: InsnNode { opcode },
+                        offset: 0,
+                    });
+                    instructions.push(insn.clone());
+                    insn_nodes.push(AbstractInsnNode::Insn(insn.clone()));
+                    jump_fixups.push(JumpFixup {
+                        start,
+                        opcode,
+                        target: node.target,
+                        insn_index: instructions.len() - 1,
+                        node_index: insn_nodes.len() - 1,
+                    });
+                }
+                AbstractInsnNode::Label(label) => {
+                    let offset = code.len();
+                    if offset <= u16::MAX as usize {
+                        label_offsets.insert(label.id, offset as u16);
+                    }
+                    insn_nodes.push(AbstractInsnNode::Label(label));
+                }
+                AbstractInsnNode::LineNumber(line) => {
+                    pending_lines.push(line);
+                    insn_nodes.push(AbstractInsnNode::LineNumber(line));
+                }
+            }
+        }
+        for fixup in jump_fixups {
+            if let Some(target_offset) = label_offsets.get(&fixup.target.id) {
+                let offset = *target_offset as i32 - fixup.start as i32;
+                if is_wide_jump(fixup.opcode) {
+                    write_i4_at(&mut code, fixup.start + 1, offset);
+                } else {
+                    write_i2_at(&mut code, fixup.start + 1, offset as i16);
+                }
+                let resolved = Insn::Jump(JumpInsnNode {
+                    insn: InsnNode { opcode: fixup.opcode },
+                    offset,
+                });
+                instructions[fixup.insn_index] = resolved.clone();
+                insn_nodes[fixup.node_index] = AbstractInsnNode::Insn(resolved);
+            }
+        }
+        let mut attributes = self.attributes;
+        if !pending_lines.is_empty() {
+            let mut entries = Vec::new();
+            for line in pending_lines {
+                if let Some(start_pc) = label_offsets.get(&line.start.id) {
+                    entries.push(LineNumber {
+                        start_pc: *start_pc,
+                        line_number: line.line,
+                    });
+                }
+            }
+            if !entries.is_empty() {
+                attributes.push(AttributeInfo::LineNumberTable { entries });
+            }
         }
         CodeAttribute {
             max_stack: self.max_stack,
             max_locals: self.max_locals,
             code,
             instructions,
-            insn_nodes: Vec::new(),
+            insn_nodes,
             exception_table: self.exception_table,
             try_catch_blocks: Vec::new(),
-            attributes: self.attributes,
+            attributes,
         }
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct JumpFixup {
+    start: usize,
+    opcode: u8,
+    target: LabelNode,
+    insn_index: usize,
+    node_index: usize,
+}
+
+fn is_wide_jump(opcode: u8) -> bool {
+    matches!(opcode, opcodes::GOTO_W | opcodes::JSR_W)
+}
+
+fn jump_size(opcode: u8) -> usize {
+    if is_wide_jump(opcode) {
+        5
+    } else {
+        3
+    }
+}
 fn build_code_attribute(
     max_stack: u16,
     max_locals: u16,
-    insns: InsnList,
+    insns: NodeList,
     cp: &mut ConstantPoolBuilder,
     exception_table: Vec<ExceptionTableEntry>,
     attributes: Vec<AttributeInfo>,
@@ -1410,6 +1525,20 @@ fn write_i2(out: &mut Vec<u8>, value: i16) {
 
 fn write_i4(out: &mut Vec<u8>, value: i32) {
     out.extend_from_slice(&value.to_be_bytes());
+}
+
+fn write_i2_at(out: &mut [u8], pos: usize, value: i16) {
+    let bytes = value.to_be_bytes();
+    out[pos] = bytes[0];
+    out[pos + 1] = bytes[1];
+}
+
+fn write_i4_at(out: &mut [u8], pos: usize, value: i32) {
+    let bytes = value.to_be_bytes();
+    out[pos] = bytes[0];
+    out[pos + 1] = bytes[1];
+    out[pos + 2] = bytes[2];
+    out[pos + 3] = bytes[3];
 }
 
 fn write_switch_padding(out: &mut Vec<u8>, opcode_offset: usize) {

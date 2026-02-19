@@ -1,4 +1,5 @@
 use crate::opcodes;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, Clone)]
 pub struct InsnNode {
@@ -61,6 +62,12 @@ pub struct JumpInsnNode {
 }
 
 #[derive(Debug, Clone)]
+pub struct JumpLabelInsnNode {
+    pub insn: InsnNode,
+    pub target: LabelNode,
+}
+
+#[derive(Debug, Clone)]
 pub struct LdcInsnNode {
     pub insn: InsnNode,
     pub value: LdcValue,
@@ -96,15 +103,47 @@ pub struct MultiANewArrayInsnNode {
     pub dimensions: u8,
 }
 
+static NEXT_LABEL_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn next_label_id() -> usize {
+    NEXT_LABEL_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Label {
+    pub id: usize,
+}
+
+impl Label {
+    pub fn new() -> Self {
+        Self { id: next_label_id() }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LabelNode {
     pub id: usize,
+}
+
+impl LabelNode {
+    pub fn new() -> Self {
+        Self { id: next_label_id() }
+    }
+
+    pub fn from_label(label: Label) -> Self {
+        Self { id: label.id }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LineNumberInsnNode {
     pub line: u16,
     pub start: LabelNode,
+}
+impl LineNumberInsnNode{
+    pub(crate) fn new(line: u16, start: LabelNode) -> Self {
+        Self { line, start }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +159,7 @@ pub enum AbstractInsnNode {
     Label(LabelNode),
     LineNumber(LineNumberInsnNode),
     Insn(Insn),
+    JumpLabel(JumpLabelInsnNode),
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +220,8 @@ impl InsnList {
     }
 }
 
+
+
 #[derive(Debug, Clone, Default)]
 pub struct NodeList {
     nodes: Vec<AbstractInsnNode>,
@@ -219,6 +261,12 @@ impl From<LineNumberInsnNode> for AbstractInsnNode {
 impl From<Insn> for AbstractInsnNode {
     fn from(value: Insn) -> Self {
         AbstractInsnNode::Insn(value)
+    }
+}
+
+impl From<JumpLabelInsnNode> for AbstractInsnNode {
+    fn from(value: JumpLabelInsnNode) -> Self {
+        AbstractInsnNode::JumpLabel(value)
     }
 }
 
