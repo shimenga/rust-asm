@@ -118,7 +118,8 @@ pub trait ClassVisitor {
     /// * `minor` - The minor version number of the class file.
     /// * `access_flags` - The class's access flags (see `Opcodes`).
     /// * `name` - The internal name of the class.
-    /// * `super_name` - The internal name of the super class (None for `Object`).
+    /// * `super_name` - The internal name of the super class (e.g., `java/lang/String`, `a/b/c`).
+    ///   Use `None` for `Object`.
     /// * `interfaces` - The internal names of the class's interfaces.
     fn visit(
         &mut self,

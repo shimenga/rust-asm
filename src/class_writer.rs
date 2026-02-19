@@ -256,7 +256,8 @@ impl ClassWriter {
     /// * `minor` - The minor version.
     /// * `access_flags` - Access modifiers (e.g., public, final).
     /// * `name` - The internal name of the class (e.g., "java/lang/String").
-    /// * `super_name` - The internal name of the super class (None for Object).
+    /// * `super_name` - The internal name of the super class (e.g., `java/lang/String`, `a/b/c`).
+    ///   Use `None` for `Object`.
     /// * `interfaces` - A list of interfaces implemented by this class.
     pub fn visit(
         &mut self,
