@@ -426,7 +426,6 @@ impl ClassFile {
             access_flags: self.access_flags,
             constant_pool: self.constant_pool.clone(),
             this_class: self.this_class,
-            super_class: self.super_class,
             name,
             super_name,
             source_file,

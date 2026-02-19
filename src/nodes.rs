@@ -26,14 +26,10 @@ pub struct ClassNode {
     /// The index into the constant pool pointing to a `CONSTANT_Class_info` structure representing this class.
     pub this_class: u16,
 
-    /// The index into the constant pool pointing to a `CONSTANT_Class_info` structure representing the direct superclass.
-    /// This is 0 for `java.lang.Object`.
-    pub super_class: u16,
-
     /// The internal name of the class (e.g., `java/lang/String`).
     pub name: String,
 
-    /// The internal name of the superclass (e.g., `java/lang/String`).
+    /// The internal name of the superclass (e.g., `java/lang/String`, `a/b/c`).
     /// Returns `None` if this class is `java.lang.Object`.
     pub super_name: Option<String>,
 
@@ -54,50 +50,6 @@ pub struct ClassNode {
 
     /// Global attributes associated with the class (e.g., `SourceFile`, `InnerClasses`, `EnclosingMethod`).
     pub attributes: Vec<AttributeInfo>,
-}
-
-impl ClassNode {
-    /// Sets the superclass by internal name (e.g., `java/lang/String`, `a/b/c`).
-    /// Use `None` for `java/lang/Object`.
-    pub fn set_super_name(&mut self, super_name: Option<&str>) {
-        match super_name {
-            None => {
-                self.super_name = None;
-                self.super_class = 0;
-            }
-            Some(name) => {
-                let index = ensure_class(&mut self.constant_pool, name);
-                self.super_name = Some(name.to_string());
-                self.super_class = index;
-            }
-        }
-    }
-}
-
-fn ensure_utf8(cp: &mut Vec<CpInfo>, value: &str) -> u16 {
-    for (index, entry) in cp.iter().enumerate() {
-        if let CpInfo::Utf8(existing) = entry
-            && existing == value
-        {
-            return index as u16;
-        }
-    }
-    cp.push(CpInfo::Utf8(value.to_string()));
-    (cp.len() - 1) as u16
-}
-
-fn ensure_class(cp: &mut Vec<CpInfo>, name: &str) -> u16 {
-    for (index, entry) in cp.iter().enumerate() {
-        if let CpInfo::Class { name_index } = entry
-            && let Some(CpInfo::Utf8(value)) = cp.get(*name_index as usize)
-            && value == name
-        {
-            return index as u16;
-        }
-    }
-    let name_index = ensure_utf8(cp, name);
-    cp.push(CpInfo::Class { name_index });
-    (cp.len() - 1) as u16
 }
 
 /// Represents a field (member variable) within a class.
@@ -154,3 +106,9 @@ pub struct MethodNode {
     /// Note that the `Code` attribute is stored separately in the `code` field for convenience.
     pub attributes: Vec<AttributeInfo>,
 }
+
+
+
+
+
+

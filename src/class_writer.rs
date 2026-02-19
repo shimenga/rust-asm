@@ -302,8 +302,9 @@ impl ClassWriter {
     /// Visits a field of the class.
     ///
     /// Returns a `FieldVisitor` to define field attributes.
+    /// If `visit_end` is not called, the field is still committed when the visitor is dropped.
     pub fn visit_field(&mut self, access_flags: u16, name: &str, descriptor: &str) -> FieldVisitor {
-        FieldVisitor::new(access_flags, name, descriptor)
+        FieldVisitor::new(access_flags, name, descriptor, self as *mut ClassWriter)
     }
 
     /// Adds a custom attribute to the class.
@@ -319,10 +320,9 @@ impl ClassWriter {
         }
 
         let this_class = self.cp.class(&self.name);
-        let super_class = match self.super_name.as_deref() {
-            Some(name) => self.cp.class(name),
-            None => 0,
-        };
+        if let Some(name) = self.super_name.as_deref() {
+            self.cp.class(name);
+        }
 
         let mut interface_indices = Vec::with_capacity(self.interfaces.len());
         for name in &self.interfaces {
@@ -371,7 +371,6 @@ impl ClassWriter {
             access_flags: self.access_flags,
             constant_pool: self.cp.into_pool(),
             this_class,
-            super_class,
             name: self.name,
             super_name: self.super_name,
             source_file: self.source_file.clone(),
@@ -550,15 +549,19 @@ pub struct FieldVisitor {
     name: String,
     descriptor: String,
     attributes: Vec<AttributeInfo>,
+    class_ptr: Option<*mut ClassWriter>,
+    committed: bool,
 }
 
 impl FieldVisitor {
-    pub fn new(access_flags: u16, name: &str, descriptor: &str) -> Self {
+    pub fn new(access_flags: u16, name: &str, descriptor: &str, class_ptr: *mut ClassWriter) -> Self {
         Self {
             access_flags,
             name: name.to_string(),
             descriptor: descriptor.to_string(),
             attributes: Vec::new(),
+            class_ptr: Some(class_ptr),
+            committed: false,
         }
     }
 
@@ -569,13 +572,39 @@ impl FieldVisitor {
     }
 
     /// Finalizes the field and attaches it to the parent `ClassWriter`.
-    pub fn visit_end(self, class: &mut ClassWriter) {
+    /// If you don't call this, the field is still attached when the visitor is dropped.
+    pub fn visit_end(mut self, class: &mut ClassWriter) {
         class.fields.push(FieldData {
             access_flags: self.access_flags,
-            name: self.name,
-            descriptor: self.descriptor,
-            attributes: self.attributes,
+            name: std::mem::take(&mut self.name),
+            descriptor: std::mem::take(&mut self.descriptor),
+            attributes: std::mem::take(&mut self.attributes),
         });
+        self.committed = true;
+        self.class_ptr = None;
+    }
+}
+
+impl Drop for FieldVisitor {
+    fn drop(&mut self) {
+        if self.committed {
+            return;
+        }
+        let Some(ptr) = self.class_ptr else {
+            return;
+        };
+        // Safety: FieldVisitor is expected to be dropped before the ClassWriter it was created from.
+        unsafe {
+            let class = &mut *ptr;
+            class.fields.push(FieldData {
+                access_flags: self.access_flags,
+                name: std::mem::take(&mut self.name),
+                descriptor: std::mem::take(&mut self.descriptor),
+                attributes: std::mem::take(&mut self.attributes),
+            });
+        }
+        self.committed = true;
+        self.class_ptr = None;
     }
 }
 
@@ -1054,7 +1083,11 @@ impl ClassFileWriter {
         write_constant_pool(&mut out, &cp)?;
         write_u2(&mut out, class_node.access_flags);
         write_u2(&mut out, class_node.this_class);
-        write_u2(&mut out, class_node.super_class);
+        let super_class = match class_node.super_name.as_deref() {
+            Some(name) => ensure_class(&mut cp, name),
+            None => 0,
+        };
+        write_u2(&mut out, super_class);
         write_u2(&mut out, class_node.interface_indices.len() as u16);
         for index in &class_node.interface_indices {
             write_u2(&mut out, *index);
