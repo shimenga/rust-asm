@@ -1,0 +1,20 @@
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo-fmt
+        entry: cargo fmt
+        language: system
+        pass_filenames: false
+        types: [rust]
+        exclude: ^target/
+        description: Format Rust code using cargo fmt (same as rustfmt, but run on all crates)
+
+      - id: clippy
+        name: clippy
+        entry: cargo clippy
+        language: system
+        pass_filenames: false
+        types: [rust]
+        exclude: ^target/
+        description: Lint Rust code using clippy (run on all crates)
