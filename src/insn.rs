@@ -194,6 +194,10 @@ pub enum MemberRef {
 pub enum LdcValue {
     Index(u16),
     String(String),
+    Int(i32),
+    Float(f32),
+    Long(i64),
+    Double(f64),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -318,12 +322,57 @@ impl LdcInsnNode {
         }
     }
 
+    pub fn int(value: i32) -> Self {
+        Self {
+            insn: opcodes::LDC.into(),
+            value: LdcValue::Int(value),
+        }
+    }
+
+    pub fn long(value: i64) -> Self {
+        Self {
+            insn: opcodes::LDC2_W.into(),
+            value: LdcValue::Long(value),
+        }
+    }
+
+    pub fn float(value: f32) -> Self {
+        Self {
+            insn: opcodes::LDC.into(),
+            value: LdcValue::Float(value),
+        }
+    }
+
+    pub fn double(value: f64) -> Self {
+        Self {
+            insn: opcodes::LDC2_W.into(),
+            value: LdcValue::Double(value),
+        }
+    }
+
+    pub fn short(value: i16) -> Self {
+        Self::int(value as i32)
+    }
+
+    pub fn char(value: u16) -> Self {
+        Self::int(value as i32)
+    }
+
+    pub fn byte(value: i8) -> Self {
+        Self::int(value as i32)
+    }
+
+    pub fn boolean(value: bool) -> Self {
+        Self::int(if value { 1 } else { 0 })
+    }
+
     pub fn string(value: &str) -> Self {
         Self {
             insn: opcodes::LDC.into(),
             value: LdcValue::String(value.to_string()),
         }
     }
+
 }
 
 impl From<InsnNode> for Insn {

@@ -1619,6 +1619,22 @@ fn visit_instruction(
                     mv.visit_ldc_insn(LdcConstant::String(value));
                     return Ok(());
                 }
+                LdcValue::Int(value) => {
+                    mv.visit_ldc_insn(LdcConstant::Integer(value));
+                    return Ok(());
+                }
+                LdcValue::Float(value) => {
+                    mv.visit_ldc_insn(LdcConstant::Float(value));
+                    return Ok(());
+                }
+                LdcValue::Long(value) => {
+                    mv.visit_ldc_insn(LdcConstant::Long(value));
+                    return Ok(());
+                }
+                LdcValue::Double(value) => {
+                    mv.visit_ldc_insn(LdcConstant::Double(value));
+                    return Ok(());
+                }
             };
             let constant = cp_ldc_constant(cp, index)?;
             mv.visit_ldc_insn(constant);

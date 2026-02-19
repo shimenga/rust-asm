@@ -95,6 +95,30 @@ impl ConstantPoolBuilder {
         index
     }
 
+    pub fn integer(&mut self, value: i32) -> u16 {
+        let index = self.push(CpInfo::Integer(value));
+        index
+    }
+
+    pub fn float(&mut self, value: f32) -> u16 {
+        let index = self.push(CpInfo::Float(value));
+        index
+    }
+
+    pub fn long(&mut self, value: i64) -> u16 {
+        let index = self.push(CpInfo::Long(value));
+        // Long takes two entries
+        self.cp.push(CpInfo::Unusable);
+        index
+    }
+
+    pub fn double(&mut self, value: f64) -> u16 {
+        let index = self.push(CpInfo::Double(value));
+        // Double takes two entries
+        self.cp.push(CpInfo::Unusable);
+        index
+    }
+
     /// Adds a NameAndType constant to the pool.
     ///
     /// Used for field and method descriptors.
@@ -480,8 +504,8 @@ impl MethodVisitor {
     }
 
     /// Visits a constant instruction (LDC).
-    pub fn visit_ldc_insn(&mut self, value: &str) -> &mut Self {
-        self.insns.add(Insn::Ldc(LdcInsnNode::string(value)));
+    pub fn visit_ldc_insn(&mut self, value: LdcInsnNode) -> &mut Self {
+        self.insns.add(Insn::Ldc(value));
         self
     }
 
@@ -881,6 +905,60 @@ fn resolve_ldc(node: LdcInsnNode, cp: &mut ConstantPoolBuilder) -> (u8, u16, Ldc
                 index,
                 LdcInsnNode {
                     insn: opcode.into(),
+                    value: LdcValue::Index(index),
+                },
+            )
+        }
+        LdcValue::Int(value) => {
+            let index = cp.integer(value);
+            let opcode = if index <= 0xFF {
+                opcodes::LDC
+            } else {
+                opcodes::LDC_W
+            };
+            (
+                opcode,
+                index,
+                LdcInsnNode {
+                    insn: opcode.into(),
+                    value: LdcValue::Index(index),
+                },
+            )
+        }
+        LdcValue::Float(value) => {
+            let index = cp.float(value);
+            let opcode = if index <= 0xFF {
+                opcodes::LDC
+            } else {
+                opcodes::LDC_W
+            };
+            (
+                opcode,
+                index,
+                LdcInsnNode {
+                    insn: opcode.into(),
+                    value: LdcValue::Index(index),
+                },
+            )
+        }
+        LdcValue::Long(value) => {
+            let index = cp.long(value);
+            (
+                opcodes::LDC2_W,
+                index,
+                LdcInsnNode {
+                    insn: opcodes::LDC2_W.into(),
+                    value: LdcValue::Index(index),
+                },
+            )
+        }
+        LdcValue::Double(value) => {
+            let index = cp.double(value);
+            (
+                opcodes::LDC2_W,
+                index,
+                LdcInsnNode {
+                    insn: opcodes::LDC2_W.into(),
                     value: LdcValue::Index(index),
                 },
             )
@@ -3342,7 +3420,7 @@ mod tests {
             "out",
             "Ljava/io/PrintStream;",
         );
-        mv.visit_ldc_insn("Hello");
+        mv.visit_ldc_insn(LdcInsnNode::string("Hello"));
         mv.visit_method_insn(
             opcodes::INVOKEVIRTUAL,
             "java/io/PrintStream",
